@@ -29,6 +29,9 @@ Gives Claude the vocabulary, idioms, and conventions of Sage X3 V12 L4G (4GL / X
 - `references/workflow-email.md` — workflow rules (`GESAWR`), templates, recipients, sending emails (`ENVMAIL`), HTML bodies
 - `references/debugging-traces.md` — `ECRAN_TRACE`, `stat1`/`funfat`, supervisor tracing, integration logging, performance hunting
 
+**Meta**
+- `references/version-caveats.md` — which primitives / helpers / URLs drift across V12 patch levels, what to verify before copy-pasting to production
+
 ## Install
 
 ### Option 1 — Claude.ai (web / mobile)

@@ -13,6 +13,7 @@ Major content expansion — V12 becomes the primary target.
 - **`references/imports-exports.md`** — IMP/EXP templates (`GESAOI`/`GESAOE`), `LECFIC`/`EXPFIC`, per-row hooks (`CTRL`/`INIT`/`FIN`), delta sync, inbox pattern.
 - **`references/workflow-email.md`** — workflow rules (`GESAWR`), templates, recipients, `ENVMAIL` / `ENVMAILHTML`, SMTP config, scheduled summaries.
 - **`references/debugging-traces.md`** — `ECRAN_TRACE`, `stat1`/`funfat`, supervisor tracing, integration logging, runtime introspection variables, performance profiling.
+- **`references/version-caveats.md`** — consolidated list of primitives / helpers / URL shapes that drift across V12 patch levels, with actionable verification steps. Addresses the audit's "things to verify on your folder" category.
 - **`examples/`** directory — 5 compilable `.src` / `.trt` fixtures illustrating V12 idioms: class with `UPDTICK`, REST service, field-control action, import hook, scheduled batch.
 - **`tests/triggers.md`** — catalog of canonical prompts (FR + EN) for manual non-regression testing.
 - **`CONTRIBUTING.md`** — style guide, local testing flow, PR process.
@@ -24,7 +25,7 @@ Major content expansion — V12 becomes the primary target.
 - **FAQ section** in README covering V12/V7 differences, `fstat` vs exceptions, version compatibility.
 
 ### Changed
-- **`SKILL.md`** reoriented around V12: frontmatter description expanded with new keywords (`Class`, `Method`, `this`, `Syracuse`, REST, workflows, `ENVMAIL`, `IMPRIM`, `LECFIC`); reference table split into 3 sections (core / UI / integration); new "V12 default idioms" section guiding choice between Classic and V12 patterns.
+- **`SKILL.md`** reoriented around V12: frontmatter description expanded with new keywords (`Class`, `Method`, `this`, `Syracuse`, REST, workflows, `ENVMAIL`, `IMPRIM`, `LECFIC`, `Infbox`, `Errbox`); reference table split into 4 sections (core / UI / integration / meta); new "V12 default idioms" section guiding choice between Classic and V12 patterns.
 - **`references/database.md`** — new sections: `UPDTICK` optimistic concurrency; `Exec Sql … On 0 Into` scalar SELECT.
 - **`references/builtin-functions.md`** — new sections: date / locale gotchas; `filpath`, `filinfo`, `filres$` file metadata helpers.
 - **`references/common-patterns.md`** — 5 new recipes (11–15): V12 class CRUD with `UPDTICK`; REST service with transaction; consume external REST API; import template custom validation hook; scheduled batch with email summary.

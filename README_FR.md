@@ -29,6 +29,9 @@ Donne à Claude le vocabulaire, les idiomes et les conventions du L4G (4GL / X3 
 - `references/workflow-email.md` — règles workflow (`GESAWR`), templates, destinataires, emails (`ENVMAIL`), HTML
 - `references/debugging-traces.md` — `ECRAN_TRACE`, `stat1`/`funfat`, traces superviseur, logs d'intégration, performance
 
+**Méta**
+- `references/version-caveats.md` — quelles primitives / helpers / URLs dérivent selon le patch level V12, à vérifier avant de déployer
+
 ## Installation
 
 ### Option 1 — Claude.ai (web / mobile)

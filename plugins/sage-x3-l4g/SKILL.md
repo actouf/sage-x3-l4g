@@ -92,6 +92,12 @@ This skill is organized by concern. Read the relevant reference file when you en
 | `references/workflow-email.md` | Workflow rules (`GESAWR`), templates, recipients, sending emails (`ENVMAIL`), HTML bodies |
 | `references/debugging-traces.md` | `ECRAN_TRACE`, `stat1`/`funfat`, supervisor tracing, integration logging, performance hunting |
 
+### Meta
+
+| File | When to read |
+|------|--------------|
+| `references/version-caveats.md` | Before copy-pasting a snippet to production — which primitives / helpers / URLs drift across V12 patch levels and what to verify |
+
 ## How to respond to L4G requests
 
 ### When the user asks you to write code
