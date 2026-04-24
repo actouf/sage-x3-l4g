@@ -14,6 +14,7 @@ Major content expansion — V12 becomes the primary target.
 - **`references/workflow-email.md`** — workflow rules (`GESAWR`), templates, recipients, `ENVMAIL` / `ENVMAILHTML`, SMTP config, scheduled summaries.
 - **`references/debugging-traces.md`** — `ECRAN_TRACE`, `stat1`/`funfat`, supervisor tracing, integration logging, runtime introspection variables, performance profiling.
 - **`references/version-caveats.md`** — consolidated list of primitives / helpers / URL shapes that drift across V12 patch levels, with actionable verification steps. Addresses the audit's "things to verify on your folder" category.
+- **SOAP enrichment in `references/web-services-integration.md`** (+240 lines) — complete `GESAWE` publication walkthrough with parameter-grid table, 1-D / 2-D array parameters, AWS pool sizing (`GESAPO`) for performance, WS-Security UsernameToken auth, WSDL-invocation XML sample, SOAP debugging decision table (7 common failures), SOAP → REST migration guidance. SOAP client section expanded with WS-Security envelope, XML escape helper, 3-option parsing strategy, SOAP fault detection.
 - **`examples/`** directory — 5 compilable `.src` / `.trt` fixtures illustrating V12 idioms: class with `UPDTICK`, REST service, field-control action, import hook, scheduled batch.
 - **`tests/triggers.md`** — catalog of canonical prompts (FR + EN) for manual non-regression testing.
 - **`CONTRIBUTING.md`** — style guide, local testing flow, PR process.
