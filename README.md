@@ -67,9 +67,29 @@ The skill is designed to auto-trigger. Just ask Claude normally:
 
 Claude will consult the relevant reference files automatically.
 
+## FAQ
+
+**V12 or V7? Is V6 covered?**
+The skill targets V12 as its primary — examples use V12 classes and representations. V7 shares most of the syntax, so it works well. V6/Classic is covered only where it still runs unchanged in V12 (masks, `Inpbox`, SOAP web services). Pure V6 patterns with no V12 equivalent are not prioritized.
+
+**Why check `fstat` instead of using exceptions?**
+The X3 runtime does not raise exceptions for database errors — it sets `[S]fstat`. Skipping the check produces silent bugs (lost writes, stuck locks). The skill emphasizes this because it's the #1 incident root cause in production.
+
+**Which V12 patch level is the skill validated against?**
+Patterns here reflect V12 patch 26+ (2024). Some supervisor signatures (`ENVMAIL`, `HTTPPOST`, `AFNC.JSONGET`) drift between patches — verify your folder's standard library before coding. File an issue if you spot a divergence.
+
+**Can examples mix French and English?**
+Yes — real X3 codebases mix both (business comments in French, English identifiers). The skill reflects that reality.
+
+**Why IMP/EXP templates over hand-rolled parsers?**
+Templates are dictionary-driven: automatic validation, traced rejects, ACL-respecting, survive patches. Hand-rolled parsers drift. The skill recommends templates by default and keeps manual parsing for genuinely unstructured formats. See `imports-exports.md`.
+
+**Where do I file bugs / feature requests?**
+On [GitHub issues](https://github.com/actouf/sage-x3-l4g/issues) — please include your V12 patch level when reporting a behavioral divergence.
+
 ## Contributing
 
-Issues and PRs welcome — especially for:
+Issues and PRs welcome — see [CONTRIBUTING.md](CONTRIBUTING.md) for style guide, local testing flow, and PR process. Especially valuable:
 
 - Real-world V12 patterns I've missed
 - Version-specific quirks (patches where a standard signature changed)

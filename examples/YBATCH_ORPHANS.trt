@@ -1,0 +1,72 @@
+##############################################################
+# YBATCH_ORPHANS — scheduled daily.
+# Lists sales orders whose BPC reference no longer exists,
+# sends the list by email to ops, logs the run.
+#
+# Schedule via GESABA → link to GESAPL.
+#
+# Demonstrates: batch script structure ($MAIN / Return), Link with
+# fstat check for "missing parent", ENVMAIL invocation, per-run log
+# to a dedicated table, early-return when nothing to report.
+##############################################################
+
+$MAIN
+
+Local File SORDER [SOH], BPCUSTOMER [BPC]
+Local Char    SUBJECT(200), BODY(8000)
+Local Integer N
+Local Char    RECIPIENT(100)
+
+N = 0
+RECIPIENT = func AFNC.PARAMG("", "YOPS_MAIL", "")    # lookup from GESADP
+If RECIPIENT = "" : RECIPIENT = "ops@example.com" : Endif
+
+BODY = "Orphan orders — " - num$(date$, "J/M/A") + chr$(13) + chr$(10) +
+       "============================" + chr$(13) + chr$(10)
+
+For [SOH] Where SOHSTA <= 2 Order By Key SOHNUM0
+    Link [BPC] With [F:SOH]BPCORD = [F:BPC]BPCNUM0
+    If fstat
+        Incr N
+        BODY = BODY - [F:SOH]SOHNUM - "  (" - [F:SOH]BPCORD - ")" +
+               "  " - num$([F:SOH]ORDDAT, "J/M/A") +
+               "  " + num$([F:SOH]ORDAMT) + chr$(13) + chr$(10)
+    Endif
+Next
+
+# Nothing to report: log and exit
+If N = 0
+    Gosub YLOG_RUN
+    Call ECRAN_TRACE("No orphans today.", 1) From GESECRAN
+    Return
+Endif
+
+BODY = BODY + chr$(13) + chr$(10) - num$(N) - " orphan orders total."
+SUBJECT = "[X3] " - num$(N) - " orphan orders on " - num$(date$, "YYYY-MM-DD")
+
+Call ENVMAIL(RECIPIENT, "", "", SUBJECT, BODY, "", "") From AMAIL
+If [S]stat1
+    Call ECRAN_TRACE("ENVMAIL failed stat1=" + num$([S]stat1) - " " - [S]funfat, 2) From GESECRAN
+Endif
+
+Gosub YLOG_RUN
+Call ECRAN_TRACE(num$(N) - " orphans reported.", 1) From GESECRAN
+Return
+
+##############################################################
+# YLOG_RUN — persist a summary row for this run.
+##############################################################
+$YLOG_RUN
+    Local File YBATCHLOG [YBL]
+    Raz [F:YBL]
+    [F:YBL]DAT   = date$
+    [F:YBL]TIM   = time$
+    [F:YBL]BATCH = "YBATCH_ORPHANS"
+    [F:YBL]USR   = [V]GUSER
+    [F:YBL]NBREC = N
+    [F:YBL]STA   = "OK"
+
+    Trbegin [YBL]
+    Write [YBL]
+    If fstat : Rollback : Else : Commit : Endif
+Return

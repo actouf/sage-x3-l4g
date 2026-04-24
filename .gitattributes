@@ -1,0 +1,19 @@
+# Normalize line endings — L4G examples contain literal chr$(13)+chr$(10),
+# let the source files themselves stay LF so diffs are clean on all platforms.
+* text=auto eol=lf
+
+# Markdown and JSON: text with LF
+*.md   text eol=lf
+*.json text eol=lf
+*.yml  text eol=lf
+*.yaml text eol=lf
+*.sh   text eol=lf
+
+# L4G source — text, LF
+*.src text eol=lf
+*.trt text eol=lf
+
+# Compiled X3 artifacts — never commit, but if someone adds them flag as binary
+*.adx binary
+*.adp binary
+*.adc binary

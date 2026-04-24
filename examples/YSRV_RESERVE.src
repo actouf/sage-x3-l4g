@@ -1,0 +1,85 @@
+##############################################################
+# YSRV_RESERVE — V12 REST service class.
+#
+# Published as a service representation; callers POST JSON:
+#   { "ITMREF": "ITM001", "QTY": 5 }
+# Response (serialized from public fields):
+#   { "ITMREF": "ITM001", "QTY": 5, "REMAINING": 37, "STATUS": "OK" }
+#
+# Endpoint: POST /api/x3/erp/<folder>/YSRV_RESERVE
+#
+# Demonstrates: class-backed REST service, transactional idiom,
+# explicit status codes, no UI primitives inside a service.
+##############################################################
+
+Class YSRV_RESERVE
+
+    Public Char    ITMREF(30)
+    Public Decimal QTY
+
+    # Out fields — serialized back to the caller
+    Public Decimal REMAINING
+    Public Char    STATUS(30)
+
+    ##########################################################
+    # Execute — called by Syracuse after deserialization.
+    # Return 0 on success, 1 on any failure (STATUS carries detail).
+    ##########################################################
+    Public Funprog Execute()
+        Local File ITMMASTER [ITM], STOCK [STO]
+        Local Integer IF_TRANS
+        Local Decimal AVAIL
+
+        # 1. Input validation
+        If this.ITMREF = ""
+            this.STATUS = "MISSING_ITMREF"
+            End 1
+        Endif
+        If this.QTY <= 0
+            this.STATUS = "INVALID_QTY"
+            End 1
+        Endif
+
+        # 2. Item must exist
+        Read [ITM]ITMREF0 = this.ITMREF
+        If fstat
+            this.STATUS = "UNKNOWN_ITEM"
+            End 1
+        Endif
+
+        # 3. Compute currently-available stock
+        AVAIL = 0
+        For [STO] Where ITMREF = this.ITMREF
+            AVAIL += [F:STO]QTYSTU
+        Next
+
+        If AVAIL < this.QTY
+            this.REMAINING = AVAIL
+            this.STATUS = "INSUFFICIENT"
+            End 1
+        Endif
+
+        # 4. Transactional reservation — If adxlog idiom for nested safety
+        If adxlog
+            Trbegin [STO]
+            IF_TRANS = 0
+        Else
+            IF_TRANS = 1
+        Endif
+
+        Update STOCK Where ITMREF = this.ITMREF With QTYSTU = QTYSTU - this.QTY Top 1
+
+        If fstat Or [S]adxuprec = 0
+            If IF_TRANS = 0 : Rollback : Endif
+            this.STATUS = "WRITE_FAILED"
+            End 1
+        Endif
+
+        If IF_TRANS = 0 : Commit : Endif
+
+        # 5. Success — report remaining quantity
+        this.REMAINING = AVAIL - this.QTY
+        this.STATUS = "OK"
+    End 0
+
+Endclass

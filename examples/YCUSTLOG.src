@@ -1,0 +1,88 @@
+##############################################################
+# YCUSTLOG — V12 class wrapping the YCUSTLOG custom table.
+# Demonstrates: Load/Save, UPDTICK optimistic concurrency,
+# return codes, no Infbox/Errbox inside a reusable class.
+#
+# Companion table (GESATB):
+#   YCUSTLOG — columns CODE(20), LABEL(60), AMT(Decimal), UPDTICK(Integer)
+##############################################################
+
+Class YCUSTLOG
+
+    Public  Char    CODE(20)
+    Public  Char    LABEL(60)
+    Public  Decimal AMT
+    Public  Integer UPDTICK
+
+    Private Integer LOADED
+
+    ##########################################################
+    # Init — set the key, mark as unloaded.
+    ##########################################################
+    Public Method Init(CODE_IN)
+    Value Char CODE_IN()
+        this.CODE    = CODE_IN
+        this.LABEL   = ""
+        this.AMT     = 0
+        this.UPDTICK = 0
+        this.LOADED  = 0
+    End
+
+    ##########################################################
+    # Load — reads the row. Returns 0 on success, 1 on not found.
+    ##########################################################
+    Public Funprog Load()
+        Local File YCUSTLOG [YCL]
+
+        Read [YCL]CODE0 = this.CODE
+        If fstat
+            End 1
+        Endif
+
+        this.LABEL   = [F:YCL]LABEL
+        this.AMT     = [F:YCL]AMT
+        this.UPDTICK = [F:YCL]UPDTICK
+        this.LOADED  = 1
+    End 0
+
+    ##########################################################
+    # Save — optimistic update using UPDTICK.
+    # Returns 0 on success, 1 if row was modified by another session.
+    ##########################################################
+    Public Funprog Save()
+        If this.LOADED = 0 : End 1 : Endif
+
+        Update YCUSTLOG Where CODE = this.CODE And UPDTICK = this.UPDTICK
+            With LABEL = this.LABEL, AMT = this.AMT, UPDTICK = UPDTICK + 1
+
+        If fstat Or [S]adxuprec = 0
+            End 1
+        Endif
+        this.UPDTICK += 1
+    End 0
+
+    ##########################################################
+    # Create — inserts a new row. Caller must populate fields first.
+    ##########################################################
+    Public Funprog Create()
+        Local File YCUSTLOG [YCL]
+
+        Raz [F:YCL]
+        [F:YCL]CODE    = this.CODE
+        [F:YCL]LABEL   = this.LABEL
+        [F:YCL]AMT     = this.AMT
+        [F:YCL]UPDTICK = 1
+
+        Trbegin [YCL]
+        Write [YCL]
+        If fstat
+            Rollback
+            End 1
+        Endif
+        Commit
+
+        this.UPDTICK = 1
+        this.LOADED  = 1
+    End 0
+
+Endclass

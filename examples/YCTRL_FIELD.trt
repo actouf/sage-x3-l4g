@@ -1,0 +1,76 @@
+##############################################################
+# YCTRL_FIELD — field control actions for custom BPC fields.
+#
+# Wire up in GESAFE: point each field's "Control" action at the
+# matching $CTRL_* label in this .trt.
+#
+# Demonstrates: Sortie champ (exit-field) validation, localized
+# messages via mess(), GOK=0 to block save, uniqueness check.
+##############################################################
+
+##############################################################
+# $CTRL_YCODE — custom code on BPCUSTOMER. Must match [A-Z]{2}[0-9]{4}
+# Blocks save when invalid; allows empty (optional field).
+##############################################################
+$CTRL_YCODE
+    If [M:BPC]YCODE = ""
+        Return                                  # empty is valid
+    Endif
+
+    # Format: 2 letters + 4 digits
+    If not pat([M:BPC]YCODE, "!!####")
+        Call ECRAN_TRACE(mess(501, 501, 1), 2) From GESECRAN
+        GOK = 0
+        Return
+    Endif
+
+    # Uniqueness — check against existing customers
+    Local File BPCUSTOMER [BPX]
+    Read [BPX]YCODEIDX = [M:BPC]YCODE
+    If !fstat And [F:BPX]BPCNUM <> [M:BPC]BPCNUM
+        Call ECRAN_TRACE(mess(502, 501, 1) - [F:BPX]BPCNUM, 2) From GESECRAN
+        GOK = 0
+    Endif
+Return
+
+##############################################################
+# $CTRL_YSIREN — French SIREN: 9 digits, Luhn-compatible.
+##############################################################
+$CTRL_YSIREN
+    If [M:BPC]YSIREN = "" : Return : Endif
+
+    If not pat([M:BPC]YSIREN, "#########")
+        Call ECRAN_TRACE(mess(503, 501, 1), 2) From GESECRAN
+        GOK = 0
+        Return
+    Endif
+
+    # Luhn check — mandatory for French SIREN validity
+    Local Integer I, CHK, DIG, SUM
+    SUM = 0
+    For I = 1 To 9
+        DIG = val(mid$([M:BPC]YSIREN, I, 1))
+        If mod(I, 2) = 0                        # even positions: doubled
+            DIG = DIG * 2
+            If DIG >= 10 : DIG = DIG - 9 : Endif
+        Endif
+        SUM += DIG
+    Next
+
+    If mod(SUM, 10) <> 0
+        Call ECRAN_TRACE(mess(504, 501, 1), 2) From GESECRAN
+        GOK = 0
+    Endif
+Return
+
+##############################################################
+# $AVBAS — overall pre-save check (standard action).
+# Called by the supervisor before committing the record.
+##############################################################
+$AVBAS
+    # Cross-field rule: YCODE required when customer type = VIP
+    If [M:BPC]BPCTYP = 2 And [M:BPC]YCODE = ""
+        Call ECRAN_TRACE(mess(505, 501, 1), 2) From GESECRAN
+        GOK = 0
+    Endif
+Return

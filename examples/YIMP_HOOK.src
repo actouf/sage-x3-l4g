@@ -1,0 +1,73 @@
+##############################################################
+# YIMP_HOOK — custom hooks for import template YIMPCUS.
+#
+# Declare in GESAOI on template YIMPCUS:
+#   CTRL subprogram: YIMP_HOOK.YIMPCUS_CTRL  (runs per line after parse)
+#   FIN  subprogram: YIMP_HOOK.YIMPCUS_FIN   (runs once after import ends)
+#
+# Demonstrates: row-level validation hook, reject pattern via GOK=0,
+# end-of-import summary logged to YINTEGRATIONLOG.
+##############################################################
+
+##############################################################
+# YIMPCUS_CTRL — called by the IMP engine for each parsed line.
+# [M:BPC] is populated from the file; set GOK=0 to reject the row.
+##############################################################
+Subprog YIMPCUS_CTRL()
+
+    # 1. Key must exist
+    If [M:BPC]BPCNUM = ""
+        [V]GOK = 0
+        Call ECRAN_TRACE("Row rejected: empty BPCNUM", 2) From GESECRAN
+        End
+    Endif
+
+    # 2. French customers: SIREN mandatory
+    If [M:BPC]CRY = "FR" And [M:BPC]BPCCRN = ""
+        [V]GOK = 0
+        Call ECRAN_TRACE("Row rejected: SIREN required for FR " - [M:BPC]BPCNUM, 2) From GESECRAN
+        End
+    Endif
+
+    # 3. SIREN format check when provided
+    If [M:BPC]BPCCRN <> "" And not pat([M:BPC]BPCCRN, "#########")
+        [V]GOK = 0
+        Call ECRAN_TRACE("Row rejected: invalid SIREN " - [M:BPC]BPCCRN, 2) From GESECRAN
+        End
+    Endif
+
+    # 4. Default currency if missing — mutation, not rejection
+    If [M:BPC]CUR = ""
+        [M:BPC]CUR = "EUR"
+    Endif
+
+    # 5. Log MAJ vs creation for traceability
+    Local File BPCUSTOMER [BPX]
+    Read [BPX]BPCNUM0 = [M:BPC]BPCNUM
+    If !fstat
+        Call ECRAN_TRACE("UPDATE: " - [M:BPC]BPCNUM, 0) From GESECRAN
+    Else
+        Call ECRAN_TRACE("CREATE: " - [M:BPC]BPCNUM, 0) From GESECRAN
+    Endif
+End
+
+##############################################################
+# YIMPCUS_FIN — called once after all rows are processed.
+# Write a summary row to YINTEGRATIONLOG for ops dashboarding.
+##############################################################
+Subprog YIMPCUS_FIN()
+    Local File YINTEGRATIONLOG [YIL]
+
+    Raz [F:YIL]
+    [F:YIL]DAT      = date$
+    [F:YIL]TIM      = time$
+    [F:YIL]USR      = [V]GUSER
+    [F:YIL]DIR      = "IN"
+    [F:YIL]ENDPOINT = "YIMPCUS"
+    [F:YIL]REQUEST  = "lines=" + num$([V]GLINEREAD) + " ok=" + num$([V]GLINEWRIT) + " rej=" + num$([V]GLINEREJ)
+    [F:YIL]STATUS   = "OK"
+
+    Trbegin [YIL]
+    Write [YIL]
+    If fstat : Rollback : Else : Commit : Endif
+End
