@@ -37,6 +37,8 @@ Rule of thumb: if the action fits in one paragraph, workflow. If it needs condit
 
 When you need full control — attach a generated file, embed a computed HTML body, or drive the whole flow from code — use `Call ENVMAIL`.
 
+**Note on the host script name:** `From AMAIL` in the examples below is the script exposing `ENVMAIL` on many V12 installs, but the exact name drifts (seen as `AMAIL`, `GESAML`, `GESAMS` depending on patch / vertical). Check your folder's standard library — the signature of `ENVMAIL` itself is what the examples capture.
+
 ### Minimal example
 
 ```l4g

@@ -24,7 +24,7 @@ Match the style used throughout the skill, which matches mainstream X3 codebases
 - **UPPERCASE for identifiers**: variables, fields, table aliases, message codes
 - **2 spaces** for indentation — never tabs (tabs render unpredictably in the Sage editor)
 - **Class prefixes in brackets are explicit**: `[L]COUNT`, `[F:BPC]BPCNUM`, `[M:SOH]SOHNUM` — even when unambiguous
-- **`Y` or `Z` prefix** on every custom symbol (tables, scripts, classes, activity codes)
+- **`Y` or `Z` prefix on every *custom* symbol** — tables, scripts, classes, activity codes, message chapters you create. Never prefix standard Sage symbols (`BPCUSTOMER`, `GESBPC`, `NUMERO`…) — they stay as shipped.
 - **French/English mixed comments** are fine and match real X3 codebases
 - **`fstat` check immediately after** every DB / file operation
 - **Transactional writes** use the `If adxlog` nested-transaction idiom (see `database.md`)

@@ -2,7 +2,7 @@
 
 V12 (and V7+) introduced a modern layer on top of the Classic engine: **classes** for reusable code and **representations** + **pages** for UI. Classic `Subprog`/`Funprog` and `Mask`/`Inpbox` still run — you just have better options now.
 
-This file is the V12 idiom. For legacy screens still shipping in V12, see `screens-and-masks.md`.
+This file is the V12 idiom. **Everything here applies to V7+ as well** — class syntax, representations, and Syracuse semantics were introduced in V7 and are unchanged in V12 at the L4G level. REST endpoint auto-generation is the V12-specific addition. For legacy screens still shipping in V12, see `screens-and-masks.md`.
 
 ## The V12 layer cake
 

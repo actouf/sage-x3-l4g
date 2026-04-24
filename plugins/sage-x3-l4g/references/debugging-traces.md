@@ -29,6 +29,10 @@ Use `0` for data, `1` for section separators, `2` for actual problems.
 
 Both exist; both work. On most folders `ECR_TRACE` is a short alias. Use whichever your existing codebase uses to stay consistent — the skill uses `ECRAN_TRACE` throughout.
 
+### The `GESECRAN` host script
+
+`ECRAN_TRACE` (and `ECR_TRACE`) lives in the standard supervisor script **`GESECRAN`** — shipped with every X3 install and the conventional home for trace primitives across V6/V7/V12. If a `Call … From GESECRAN` fails with "script not found", you're either in a folder where the supervisor isn't linked (rare) or on an unusually stripped-down patch level. Standard folders always have it.
+
 ## Conditional / gated traces
 
 Full production code shouldn't spam the trace. Pattern:

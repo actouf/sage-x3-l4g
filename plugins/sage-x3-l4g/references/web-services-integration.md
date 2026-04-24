@@ -139,6 +139,8 @@ The standard way in V12: the `WEBSER` / `HTTP` helper subprograms shipped with t
 
 ### Generic pattern
 
+**Note on script names below:** the X3 supervisor does not expose a single fixed HTTP helper — different V12 patch levels ship `WEBSER`, `HTTPREQ`, or nothing at all (you write a thin wrapper over `System curl` or over the JVM bridge). The examples below call `HTTPPOST` / `HTTPGET` from a **user-defined** `YHTTP` script — substitute with whatever wrapper exists in your folder. The pattern (args, status handling) is what matters, not the exact script name.
+
 ```l4g
 Local Char URL(500), BODY(2000), RESP(10000)
 Local Integer HTTPCODE

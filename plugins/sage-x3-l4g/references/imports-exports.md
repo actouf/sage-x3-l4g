@@ -117,7 +117,7 @@ PROCESSED = "TMP/processed/"
 
 System "ls " - INBOX - "*.csv" = FILES
 N = 0
-For I = 1 To dim(FILES)
+For I = 1 To maxtab(FILES)                  # iterate declared array bound; break on empty slot
     If FILES(I) = "" : Exitfor : Endif
     Call LECFIC("YIMPORD", INBOX - FILES(I), "", "") From IMPOBJ
     If [S]stat1
