@@ -1,0 +1,25 @@
+# macOS
+.DS_Store
+
+# Windows
+Thumbs.db
+Desktop.ini
+
+# Editor
+.idea/
+.vscode/
+*.swp
+*~
+
+# Python (in case someone adds scripts later)
+__pycache__/
+*.pyc
+*.pyo
+
+# Packaging output
+*.skill
+dist/
+
+# Evals / scratch
+evals-workspace/
+*-workspace/
