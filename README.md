@@ -33,6 +33,9 @@ Gives Claude the vocabulary, idioms, and conventions of Sage X3 V12 L4G (4GL / X
 - `references/debugging-traces.md` — `ECRAN_TRACE`, `stat1`/`funfat`, supervisor tracing, integration logging
 - `references/performance.md` — indexes, `Order By Key`, `Link` joins, transaction granularity, profiling, anti-patterns
 - `references/security-permissions.md` — `GESAUT` / `GACTION` / `GESAFP`, ACL on services, credential storage, audit logging, injection prevention
+- `references/batch-scheduling.md` — `GESABA` / `GESAPL`, recurrent vs one-shot, calendars, dependencies, monitoring, restart safety
+- `references/personalisation-activity.md` — activity codes (`GESACV`, `#Active`), personalisation (`GESAPE`), folder hierarchy, patch generation/import
+- `references/localization.md` — messages (`mess`, `GESAML`), `[V]GLANGUE`, date / time formats, currencies (`GESCUR`), multi-language templates, UTF-8 / CJK
 
 **Meta**
 - `references/code-review-checklist.md` — structured pass before approving a `.src` / `.trt` change, red flags ranked by blast radius

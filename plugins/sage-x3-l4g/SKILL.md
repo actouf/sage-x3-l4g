@@ -1,6 +1,6 @@
 ---
 name: sage-x3-l4g
-description: Write, read, debug, and review Sage X3 V12 4GL code — also called L4G, X3 script, Adonix, or SAFE X3 scripting. Triggers on any mention of Sage X3 development, files with extensions .src, .trt, .adx, .adp, or L4G-specific syntax like [M:...], [F:...], Trbegin, Readlock, Funprog, Subprog, Class, Method, Public, Private, this, Call...From, Onerrgo, Default File, Mask, Inpbox, Infbox, Errbox, Gosub, fstat, adxlog, UPDTICK, or three-letter uppercase table abbreviations (BPC, ITM, SOH, GACC, etc.). Use this skill whenever the user asks about Sage X3 customization, specific scripts, processes, classes, representations, Syracuse, REST endpoints, actions on fields ("actions champs"), entry transactions, workflows, emails (ENVMAIL), reports (IMPRIM), imports/exports (LECFIC), web services (AWS/SOAP), debugging traces, performance / index / Order By Key tuning, security and authorisations (GESAUT, GACTION, GESAFP, function profiles, ACL), or code review of L4G. Also use proactively when the user pastes L4G code even without naming it — the bracketed-class syntax, French/English mixed keywords, and `:#` comments are diagnostic.
+description: Write, read, debug, and review Sage X3 V12 4GL code — also called L4G, X3 script, Adonix, or SAFE X3 scripting. Triggers on any mention of Sage X3 development, files with extensions .src, .trt, .adx, .adp, or L4G-specific syntax like [M:...], [F:...], Trbegin, Readlock, Funprog, Subprog, Class, Method, Public, Private, this, Call...From, Onerrgo, Default File, Mask, Inpbox, Infbox, Errbox, Gosub, fstat, adxlog, UPDTICK, or three-letter uppercase table abbreviations (BPC, ITM, SOH, GACC, etc.). Use this skill whenever the user asks about Sage X3 customization, specific scripts, processes, classes, representations, Syracuse, REST endpoints, actions on fields ("actions champs"), entry transactions, workflows, emails (ENVMAIL), reports (IMPRIM), imports/exports (LECFIC), web services (AWS/SOAP), debugging traces, performance / index / Order By Key tuning, security and authorisations (GESAUT, GACTION, GESAFP, function profiles, ACL), batch processing and scheduling (GESABA, GESAPL), personalisation and activity codes (GESAPE, GESACV, patches), localisation (mess, GESAML, multi-currency, multi-language), or code review of L4G. Also use proactively when the user pastes L4G code even without naming it — the bracketed-class syntax, French/English mixed keywords, and `:#` comments are diagnostic.
 ---
 
 # Sage X3 L4G — Development Assistant (V12)
@@ -96,6 +96,9 @@ This skill is organized by concern. Read the relevant reference file when you en
 | `references/debugging-traces.md` | `ECRAN_TRACE`, `stat1`/`funfat`, supervisor tracing, integration logging |
 | `references/performance.md` | Indexes, `Order By Key`, `Link` joins, `Read` vs `Readlock`, transaction granularity, profiling, anti-patterns |
 | `references/security-permissions.md` | `GESAUT` / `GACTION` / `GESAFP`, ACL on services, credential storage, audit logging, SQL/XML/JSON injection |
+| `references/batch-scheduling.md` | `GESABA` / `GESAPL`, recurrent vs one-shot, calendars, dependencies, batch monitoring (`GESALI`/`GESAEX`), pacing, restart safety |
+| `references/personalisation-activity.md` | Activity codes (`GESACV`, `#Active`), personalisation (`GESAPE`), folder hierarchy, patch generation/import, override hygiene |
+| `references/localization.md` | Messages (`mess`, `GESAML`), `[V]GLANGUE`, date / time formats, currencies (`GESCUR`), multi-language email templates, UTF-8 / CJK |
 
 ### Meta
 
