@@ -28,14 +28,18 @@ Catalog of prompts the skill should react to, used for manual non-regression tes
 
 | # | Prompt | Should trigger | Consult |
 |---|--------|----------------|---------|
-| 11 | Publie ce Subprog comme web service REST dans X3 | ✅ | `web-services-integration.md` |
-| 12 | Appeler une API REST externe depuis L4G et parser le JSON | ✅ | `web-services-integration.md` |
+| 11 | Publie ce Subprog comme web service REST dans X3 | ✅ | `web-services-rest.md` |
+| 12 | Appeler une API REST externe depuis L4G et parser le JSON | ✅ | `web-services-rest.md` |
 | 13 | Comment importer un CSV avec une validation par ligne ? | ✅ | `imports-exports.md`, `examples/YIMP_HOOK.src` |
 | 14 | Lancer un état Crystal depuis une action d'écran X3 | ✅ | `reports-printing.md` |
 | 15 | Règle de workflow qui envoie un mail quand une commande > 10000 EUR est validée | ✅ | `workflow-email.md` |
 | 16 | Envoyer un email avec pièce jointe PDF depuis un batch L4G | ✅ | `workflow-email.md`, `reports-printing.md` |
 | 17 | Comment débugger un `fstat=2` dans mon script ? | ✅ | `debugging-traces.md` |
-| 18 | Performance: mon `For` est lent, comment investiguer ? | ✅ | `debugging-traces.md` |
+| 18 | Performance: mon `For` est lent, comment investiguer ? | ✅ | `performance.md`, `debugging-traces.md` |
+| 19 | Publie ce Subprog comme web service SOAP avec déclaration GESAWE | ✅ | `web-services-soap.md` |
+| 20 | Revue de code : check-list pour valider un .src custom | ✅ | `code-review-checklist.md` |
+| 21 | Comment poser une ACL sur un service REST custom ? | ✅ | `security-permissions.md` |
+| 22 | Ajouter un index custom sur une table standard pour un `For` lent | ✅ | `performance.md` |
 
 ## Review / paste-code
 

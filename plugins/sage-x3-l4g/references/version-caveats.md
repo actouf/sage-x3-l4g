@@ -21,10 +21,10 @@ The `Call <NAME> From <SCRIPT>` pattern is stable; the `<SCRIPT>` name isn't.
 
 | Helper | Examples use | Availability |
 |--------|--------------|--------------|
-| `func AFNC.JSONGET(body, key)` | `web-services-integration.md`, `common-patterns.md` | Present on most V12 ≥ 2023 patches; may be missing on older patches or stripped installs |
+| `func AFNC.JSONGET(body, key)` | `web-services-rest.md`, `common-patterns-v12.md` | Present on most V12 ≥ 2023 patches; may be missing on older patches or stripped installs |
 | `func AFNC.PARAMG(chap, code, symb)` | `examples/YBATCH_ORPHANS.trt` | Universal, but parameter order has small variants |
-| `func AFNC.XML*` (XML parse) | `web-services-integration.md` | Less common; test before relying on it |
-| HTTP client (`HTTPPOST`, `HTTPGET`) | `web-services-integration.md`, `common-patterns.md` | **No shipped standard** — examples use a user-defined `YHTTP` wrapper. Build yours over `System curl`, the JVM bridge, or a published supervisor helper in your version |
+| `func AFNC.XML*` (XML parse) | `web-services-soap.md` | Less common; test before relying on it |
+| HTTP client (`HTTPPOST`, `HTTPGET`) | `web-services-rest.md`, `web-services-soap.md`, `common-patterns-v12.md` | **No shipped standard** — examples use a user-defined `YHTTP` wrapper. Build yours over `System curl`, the JVM bridge, or a published supervisor helper in your version |
 
 **Action:** stub any missing helper with a minimal L4G wrapper that has the same signature — keeps your business code portable.
 

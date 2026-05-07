@@ -16,20 +16,26 @@ Donne à Claude le vocabulaire, les idiomes et les conventions du L4G (4GL / X3 
 - `references/database.md` — `Read`/`Readlock`/`Write`/`For`, pattern `If adxlog`, `UPDTICK`, `Link`, SQL embarqué
 - `references/builtin-functions.md` — chaînes, dates, `pat`, `System`, fichiers séquentiels, `filpath`/`filinfo`
 - `references/conventions-and-naming.md` — règle Y/Z, alias 3 lettres, chapitres de messages, arborescence
-- `references/common-patterns.md` — 15 recettes adaptables (transactions, grilles, classes, REST, imports, batch email…)
+- `references/common-patterns.md` — recettes core / Classic (transactions, grilles, gestion d'erreurs, actions champ, paramètres, batch)
+- `references/common-patterns-v12.md` — recettes V12 (classe CRUD avec `UPDTICK`, service REST, consommation REST externe, hook d'import, batch planifié + mail)
 
 **IHM — Classic et V12**
 - `references/screens-and-masks.md` — masques V6/Classic (`[M:...]`, `Inpbox`, actions standard, grilles) toujours actifs en V12
 - `references/v12-classes-representations.md` — V12 natif : `Class`/`Method`/`this`, représentations, pages, objets métier, surface REST
 
 **Intégration et exploitation**
-- `references/web-services-integration.md` — publier SOAP (AWS) et REST, consommer des API externes, JSON, SData
+- `references/web-services-integration.md` — vue d'ensemble : comparaison des protocoles, échange de fichiers, logs d'intégration, pièges transverses
+- `references/web-services-soap.md` — publication SOAP classique (`GESAWE` / `GESAPO`), appel de services SOAP externes, WS-Security
+- `references/web-services-rest.md` — publication REST (Syracuse), consommation d'API REST externes, JSON, OAuth, SData
 - `references/imports-exports.md` — templates IMP/EXP (`LECFIC`/`EXPFIC`), hooks d'import, synchronisation delta
 - `references/reports-printing.md` — lancement d'états via `IMPRIM`, destinations (`GESADI`), Crystal / états natifs, export Excel
 - `references/workflow-email.md` — règles workflow (`GESAWR`), templates, destinataires, emails (`ENVMAIL`), HTML
-- `references/debugging-traces.md` — `ECRAN_TRACE`, `stat1`/`funfat`, traces superviseur, logs d'intégration, performance
+- `references/debugging-traces.md` — `ECRAN_TRACE`, `stat1`/`funfat`, traces superviseur, logs d'intégration
+- `references/performance.md` — index, `Order By Key`, jointures `Link`, granularité des transactions, profilage, anti-patterns
+- `references/security-permissions.md` — `GESAUT` / `GACTION` / `GESAFP`, ACL sur services, stockage de secrets, audit, prévention des injections
 
 **Méta**
+- `references/code-review-checklist.md` — passe structurée avant d'approuver une modif `.src` / `.trt`, red flags classés par criticité
 - `references/version-caveats.md` — quelles primitives / helpers / URLs dérivent selon le patch level V12, à vérifier avant de déployer
 
 ## Installation

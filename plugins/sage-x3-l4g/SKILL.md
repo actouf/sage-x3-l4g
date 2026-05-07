@@ -1,6 +1,6 @@
 ---
 name: sage-x3-l4g
-description: Write, read, debug, and review Sage X3 V12 4GL code — also called L4G, X3 script, Adonix, or SAFE X3 scripting. Triggers on any mention of Sage X3 development, files with extensions .src, .trt, .adx, .adp, or L4G-specific syntax like [M:...], [F:...], Trbegin, Readlock, Funprog, Subprog, Class, Method, Public, Private, this, Call...From, Onerrgo, Default File, Mask, Inpbox, Infbox, Errbox, Gosub, fstat, adxlog, or three-letter uppercase table abbreviations (BPC, ITM, SOH, GACC, etc.). Use this skill whenever the user asks about Sage X3 customization, specific scripts, processes, classes, representations, Syracuse, REST endpoints, actions on fields ("actions champs"), entry transactions, workflows, emails (ENVMAIL), reports (IMPRIM), imports/exports (LECFIC), web services (AWS/SOAP), or debugging traces. Also use proactively when the user pastes L4G code even without naming it — the bracketed-class syntax, French/English mixed keywords, and `:#` comments are diagnostic.
+description: Write, read, debug, and review Sage X3 V12 4GL code — also called L4G, X3 script, Adonix, or SAFE X3 scripting. Triggers on any mention of Sage X3 development, files with extensions .src, .trt, .adx, .adp, or L4G-specific syntax like [M:...], [F:...], Trbegin, Readlock, Funprog, Subprog, Class, Method, Public, Private, this, Call...From, Onerrgo, Default File, Mask, Inpbox, Infbox, Errbox, Gosub, fstat, adxlog, UPDTICK, or three-letter uppercase table abbreviations (BPC, ITM, SOH, GACC, etc.). Use this skill whenever the user asks about Sage X3 customization, specific scripts, processes, classes, representations, Syracuse, REST endpoints, actions on fields ("actions champs"), entry transactions, workflows, emails (ENVMAIL), reports (IMPRIM), imports/exports (LECFIC), web services (AWS/SOAP), debugging traces, performance / index / Order By Key tuning, security and authorisations (GESAUT, GACTION, GESAFP, function profiles, ACL), or code review of L4G. Also use proactively when the user pastes L4G code even without naming it — the bracketed-class syntax, French/English mixed keywords, and `:#` comments are diagnostic.
 ---
 
 # Sage X3 L4G — Development Assistant (V12)
@@ -73,7 +73,8 @@ This skill is organized by concern. Read the relevant reference file when you en
 | `references/database.md` | Any database operation: `Read`, `For`, `Trbegin`, `Commit`, `Rollback`, `Update`, `Readlock`, `Link`, `updtick`, SQL embedding |
 | `references/builtin-functions.md` | String, date, numeric, and system functions: `pat`, `mid$`, `format$`, `num$`, `gdat`, `System`, `func` calls, file info |
 | `references/conventions-and-naming.md` | Three-letter abbreviations, Y/Z specific-code prefixes, activity codes, file extensions, patch folders |
-| `references/common-patterns.md` | Ready-to-adapt recipes: transactional multi-table write, grid population, REST service, class pattern, error traces |
+| `references/common-patterns.md` | Core / Classic recipes: transactional multi-table write, grid population, error handling, action-on-field, sub-prog params, batch |
+| `references/common-patterns-v12.md` | V12 recipes: class with CRUD + `UPDTICK`, REST service, external REST consumption, import hook, scheduled batch + email |
 
 ### UI — Classic and V12
 
@@ -86,16 +87,21 @@ This skill is organized by concern. Read the relevant reference file when you en
 
 | File | When to read |
 |------|--------------|
-| `references/web-services-integration.md` | Publishing SOAP (AWS) or REST endpoints, consuming external APIs, JSON, SData |
+| `references/web-services-integration.md` | Overview / router: protocol comparison, file exchange, integration logs, cross-cutting gotchas |
+| `references/web-services-soap.md` | Publishing classic SOAP (`GESAWE` / `GESAPO`), calling external SOAP services, WS-Security |
+| `references/web-services-rest.md` | Publishing REST endpoints (Syracuse), consuming external REST APIs, JSON, OAuth, SData |
 | `references/imports-exports.md` | IMP/EXP templates (`LECFIC`/`EXPFIC`), custom import hooks, delta sync patterns |
 | `references/reports-printing.md` | Launching reports via `IMPRIM`, destinations (`GESADI`), Crystal / native states, Excel exports |
 | `references/workflow-email.md` | Workflow rules (`GESAWR`), templates, recipients, sending emails (`ENVMAIL`), HTML bodies |
-| `references/debugging-traces.md` | `ECRAN_TRACE`, `stat1`/`funfat`, supervisor tracing, integration logging, performance hunting |
+| `references/debugging-traces.md` | `ECRAN_TRACE`, `stat1`/`funfat`, supervisor tracing, integration logging |
+| `references/performance.md` | Indexes, `Order By Key`, `Link` joins, `Read` vs `Readlock`, transaction granularity, profiling, anti-patterns |
+| `references/security-permissions.md` | `GESAUT` / `GACTION` / `GESAFP`, ACL on services, credential storage, audit logging, SQL/XML/JSON injection |
 
 ### Meta
 
 | File | When to read |
 |------|--------------|
+| `references/code-review-checklist.md` | Structured pass before approving a `.src` / `.trt` change — consolidated red flags ranked by blast radius |
 | `references/version-caveats.md` | Before copy-pasting a snippet to production — which primitives / helpers / URLs drift across V12 patch levels and what to verify |
 
 ## How to respond to L4G requests
@@ -111,7 +117,7 @@ This skill is organized by concern. Read the relevant reference file when you en
 
 ### When the user pastes code to review
 
-Scan for these red flags in order:
+Run the structured pass in `references/code-review-checklist.md` — it covers correctness, conventions, V12 idioms, security, performance, and style, ranked by blast radius. The headline red flags to surface first:
 
 1. Missing `fstat` check after a database or file operation
 2. `Write` / `Rewrite` / `Delete` without `Trbegin` … `Commit` / `Rollback`
@@ -123,7 +129,7 @@ Scan for these red flags in order:
 8. `Goto` across subprogram boundaries (legal but almost always a bug)
 9. `Next` used on a `For` loop that was modified inside the loop body
 
-State each issue with the exact line, explain why it's a problem, and propose the fix.
+State each issue with the exact line, explain why it's a problem, and propose the fix. Pull from `code-review-checklist.md`, `security-permissions.md`, and `performance.md` for the full set of checks.
 
 ### V12 default idioms (prefer over Classic)
 
