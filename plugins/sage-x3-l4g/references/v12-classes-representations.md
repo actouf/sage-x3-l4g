@@ -218,7 +218,7 @@ Every V12 business object gets a generated REST API under `/api/x3/erp/<folder>/
 | `PATCH /api/x3/erp/SEED/YMYOBJ('KEY')` | Update |
 | `DELETE /api/x3/erp/SEED/YMYOBJ('KEY')` | Delete |
 
-Authentication via Syracuse token. See `web-services-integration.md` for calling patterns.
+Authentication via Syracuse token. See `web-services-rest.md` for calling patterns and `web-services-soap.md` for the legacy SOAP path.
 
 ## Syracuse service script
 

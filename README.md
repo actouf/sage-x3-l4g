@@ -16,20 +16,26 @@ Gives Claude the vocabulary, idioms, and conventions of Sage X3 V12 L4G (4GL / X
 - `references/database.md` — `Read`/`Readlock`/`Write`/`For`, the `If adxlog` nested-transaction pattern, `UPDTICK`, `Link`, embedded SQL
 - `references/builtin-functions.md` — strings, dates, `pat`, `System`, sequential files, file info (`filpath`, `filinfo`)
 - `references/conventions-and-naming.md` — the Y/Z rule, 3-letter aliases, message chapters, folder layout
-- `references/common-patterns.md` — 15 ready-to-adapt recipes (transactions, grids, class wrappers, REST, imports, batch emails…)
+- `references/common-patterns.md` — core / Classic recipes (transactions, grids, error handling, action-on-field, sub-prog params, batch)
+- `references/common-patterns-v12.md` — V12 recipes (class CRUD with `UPDTICK`, REST service, external REST consumption, import hook, scheduled batch + email)
 
 **UI — Classic and V12**
 - `references/screens-and-masks.md` — legacy V6/Classic masks (`[M:...]`, `Inpbox`, standard actions, grids) still running in V12
 - `references/v12-classes-representations.md` — V12-native: `Class`/`Method`/`this`, representations, pages, business objects, REST surface
 
 **Integration and operations**
-- `references/web-services-integration.md` — publishing SOAP (AWS) and REST endpoints, consuming external APIs, JSON, SData
+- `references/web-services-integration.md` — overview and router: protocol comparison, file exchange, integration logs, cross-cutting gotchas
+- `references/web-services-soap.md` — publishing classic SOAP (`GESAWE` / `GESAPO`), calling external SOAP, WS-Security
+- `references/web-services-rest.md` — publishing REST (Syracuse), consuming external REST APIs, JSON, OAuth, SData
 - `references/imports-exports.md` — IMP/EXP templates (`LECFIC`/`EXPFIC`), custom import hooks, delta sync patterns
 - `references/reports-printing.md` — launching reports via `IMPRIM`, destinations (`GESADI`), Crystal / native states, Excel exports
 - `references/workflow-email.md` — workflow rules (`GESAWR`), templates, recipients, sending emails (`ENVMAIL`), HTML bodies
-- `references/debugging-traces.md` — `ECRAN_TRACE`, `stat1`/`funfat`, supervisor tracing, integration logging, performance hunting
+- `references/debugging-traces.md` — `ECRAN_TRACE`, `stat1`/`funfat`, supervisor tracing, integration logging
+- `references/performance.md` — indexes, `Order By Key`, `Link` joins, transaction granularity, profiling, anti-patterns
+- `references/security-permissions.md` — `GESAUT` / `GACTION` / `GESAFP`, ACL on services, credential storage, audit logging, injection prevention
 
 **Meta**
+- `references/code-review-checklist.md` — structured pass before approving a `.src` / `.trt` change, red flags ranked by blast radius
 - `references/version-caveats.md` — which primitives / helpers / URLs drift across V12 patch levels, what to verify before copy-pasting to production
 
 ## Install
