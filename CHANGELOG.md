@@ -4,12 +4,15 @@ All notable changes to the `sage-x3-l4g` skill. Format based on [Keep a Changelo
 
 ## [0.3.0] — 2026-05-07
 
-New references for code review, security, and performance, plus splitting two oversized references in line with the ~300-line guideline.
+Major content expansion: review / security / performance / batch / personalisation / localisation references, plus splitting two oversized files to keep each under the ~300-line guideline.
 
 ### Added
 - **`references/code-review-checklist.md`** — structured pass with red flags ranked by blast radius (correctness → conventions → V12 idioms → security → performance → style), each with symptom / why / fix. Replaces the dispersed bullet list in `SKILL.md`.
 - **`references/security-permissions.md`** — `GESAUT`, `GACTION`, `GESAFP`, function profiles, ACL on SOAP / REST, credential storage (`PARAMG`, encrypted parameters), audit logging, SQL / XML / JSON injection prevention, restricted-action 2FA pattern, folder isolation.
 - **`references/performance.md`** — fast-path mental model, index strategy, `Read` vs `Readlock`, transaction granularity (per-row, bounded-batch), N+1 → `Link`, `For ... Order By Key`, `Exec Sql` when needed, supervisor-trace-driven profiling, AWS pool sizing, common anti-patterns table, profiling checklist.
+- **`references/batch-scheduling.md`** — batch lifecycle (`GESABA` / `GESAPL` / `GESBSV`), `$MAIN` script template, parameter grid, recurrent vs one-shot, calendar-driven schedules (`GESACR`), job dependencies (script chain or `CRBATCH` enqueue), monitoring (`GESALI` / `GESAEX`), `YBATCHLOG` pattern, post-batch summaries, pacing with `Sleep`, restart safety, anti-patterns table.
+- **`references/personalisation-activity.md`** — folder hierarchy (standard → parent → child), activity codes (`GESACV`, `#Active`/`#End` directives, naming rules), personalisation (`GESAPE`) for non-invasive dictionary changes, override discipline, patch generation / import workflow (`GESAPA`), versioning custom modules.
+- **`references/localization.md`** — `mess()` and chapters (`GESAML`, custom range conventions), `[V]GLANGUE`, language-aware date / time (`format$`, `[V]GFORMA`), multi-currency (`GESCUR`, decimals, symbols, conversion via `GDEV.DEVISE`), country-specific addresses (`GESACO` / `FORMAT_ADDR`), email translation, UTF-8 / RTL / CJK pitfalls.
 - **`references/common-patterns-v12.md`** — split out from `common-patterns.md`. V12 recipes 1–5: class CRUD with `UPDTICK`, REST service, external REST consumption, import hook, scheduled batch with email summary.
 - **`references/web-services-soap.md`** — split out from `web-services-integration.md`. Classic SOAP publication (`GESAWE`, parameter grid, 1-D / 2-D arrays), AWS pool sizing (`GESAPO`), WS-Security UsernameToken auth, debugging decision table, SOAP→REST migration guidance, SOAP client (envelope, escape helper, parsing strategies, fault detection).
 - **`references/web-services-rest.md`** — split out from `web-services-integration.md`. REST publication (Syracuse representations + service classes), consuming external REST APIs (JSON parsing, build, escape, OAuth pre-flight, retry / timeout / pagination), SData migration note, REST-specific gotchas.
@@ -17,8 +20,9 @@ New references for code review, security, and performance, plus splitting two ov
 ### Changed
 - **`references/web-services-integration.md`** reduced to a slim overview / router (~90 lines) — protocol comparison, choosing SOAP vs REST, file exchange (SFTP), integration trace pattern, cross-cutting gotchas (TLS, encoding, payload size, credentials), publishing checklist.
 - **`references/common-patterns.md`** trimmed to the 10 core / Classic recipes (~270 lines); V12 recipes moved to `common-patterns-v12.md`.
-- **`SKILL.md`** — frontmatter `description` extended with new keywords (`UPDTICK`, performance, `Order By Key`, security, `GESAUT`, `GACTION`, `GESAFP`, ACL, code review). Reference table split into 4 sections updated for the new files. "When the user pastes code to review" section now points to `code-review-checklist.md` while keeping the headline red flags inline.
-- **`README.md` and `README_FR.md`** — reference lists updated for the new files (security, performance, checklist, common-patterns-v12, web-services-soap, web-services-rest).
+- **`SKILL.md`** — frontmatter `description` extended with new keywords (`UPDTICK`, performance, `Order By Key`, security/`GESAUT`/`GACTION`/`GESAFP`/ACL, batch/`GESABA`/`GESAPL`, personalisation/`GESAPE`/`GESACV`/patches, localisation/`mess`/`GESAML`, code review). Reference table extended. "When the user pastes code to review" section points to `code-review-checklist.md` while keeping the headline red flags inline.
+- **`README.md` and `README_FR.md`** — reference lists updated for all new files.
+- **`tests/triggers.md`** expanded from 22 to 44 prompts: new sections for batch / scheduling / personalisation, localisation / security, plus more review / paste-code prompts; quality checks extended for batch/service/perf/security outputs.
 - **`marketplace.json`** — bumped to `0.3.0`.
 
 ## [0.2.0] — 2026-04-24

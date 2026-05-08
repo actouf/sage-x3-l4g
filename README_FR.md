@@ -33,6 +33,9 @@ Donne à Claude le vocabulaire, les idiomes et les conventions du L4G (4GL / X3 
 - `references/debugging-traces.md` — `ECRAN_TRACE`, `stat1`/`funfat`, traces superviseur, logs d'intégration
 - `references/performance.md` — index, `Order By Key`, jointures `Link`, granularité des transactions, profilage, anti-patterns
 - `references/security-permissions.md` — `GESAUT` / `GACTION` / `GESAFP`, ACL sur services, stockage de secrets, audit, prévention des injections
+- `references/batch-scheduling.md` — `GESABA` / `GESAPL`, récurrent vs one-shot, calendriers, dépendances, monitoring, redémarrage sûr
+- `references/personalisation-activity.md` — codes activité (`GESACV`, `#Active`), personnalisation (`GESAPE`), hiérarchie de dossiers, génération/import de patchs
+- `references/localization.md` — messages (`mess`, `GESAML`), `[V]GLANGUE`, formats date/heure, devises (`GESCUR`), templates multilingues, UTF-8 / CJK
 
 **Méta**
 - `references/code-review-checklist.md` — passe structurée avant d'approuver une modif `.src` / `.trt`, red flags classés par criticité
