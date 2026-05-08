@@ -8,12 +8,13 @@ For naming conventions (Y / Z prefixes, three-letter aliases) see `conventions-a
 
 Customisation in X3 is layered. From most stable to most volatile:
 
-```
-Standard X3        ← never modify; replaced on every patch
-   ↑
-Parent folder      ← shared base for all your sites (e.g. CUSTOM)
-   ↑
-Child folder       ← per-site / per-tenant overrides (e.g. SEED, ACME, BETA)
+```mermaid
+flowchart BT
+    standard["Standard X3<br/><i>replaced on every patch — never modify</i>"]
+    parent["Parent folder<br/><i>shared base for all your sites (e.g. CUSTOM)</i>"]
+    child["Child folder<br/><i>per-site / per-tenant overrides (e.g. SEED, ACME, BETA)</i>"]
+    parent -->|overrides| standard
+    child -->|overrides| parent
 ```
 
 Code in a child folder overrides parent; parent overrides standard. The runtime walks this chain at script lookup time. **Custom code lives in parent or child, never in standard.**

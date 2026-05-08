@@ -6,8 +6,13 @@ For performance tuning of the batch body itself (indexes, transaction granularit
 
 ## The batch lifecycle in X3
 
-```
-Source (.trt)  ──► declared in GESABA  ──► scheduled in GESAPL  ──► run by adxbatch  ──► trace in adxlog + custom log table
+```mermaid
+flowchart LR
+    src["Source<br/><code>.trt</code>"] --> dec["Declared<br/>in <code>GESABA</code>"]
+    dec --> sch["Scheduled<br/>in <code>GESAPL</code>"]
+    sch --> run["Executed<br/>by <code>adxbatch</code>"]
+    run --> log["Traced in<br/><code>adxlog</code> + <code>YBATCHLOG</code>"]
+    run --> exq["Status in<br/><code>GESAEX</code>"]
 ```
 
 Three objects to wire:
