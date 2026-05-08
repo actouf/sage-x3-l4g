@@ -2,6 +2,23 @@
 
 All notable changes to the `sage-x3-l4g` skill. Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning follows [SemVer](https://semver.org/).
 
+## [0.5.1] — 2026-05-08
+
+GitHub Pages site for browsing the references without cloning.
+
+### Added
+- **`_config.yml`** at repo root — Jekyll configuration (cayman theme, GFM, pretty permalinks, exclusions for `.github/`, `scripts/`, `CONTRIBUTING.md`, `CLAUDE.md`, `LICENSE`, etc.).
+- **`index.md`** at repo root — categorized landing page that links to every reference, the SKILL.md entry point, the examples, and the trigger catalogue. Mirrors the README structure.
+- **Docs badge** on `README.md` and `README_FR.md` pointing to the published site.
+- **Top-of-README link** to the rendered docs (English and French).
+
+### Changed
+- **`marketplace.json`** — bumped to `0.5.1`.
+
+### Notes
+- Pages must be enabled once in the GitHub repository **Settings → Pages → Source: Deploy from a branch → `master` / `(root)`**. Jekyll auto-builds on every push to `master`. URL: `https://actouf.github.io/sage-x3-l4g/`.
+- No reference content changed in this release. Same skill, just easier to read.
+
 ## [0.5.0] — 2026-05-08
 
 Audit / compliance reference, expanded triggers catalogue, Mermaid diagrams, README badges, CI branch fix.
@@ -109,6 +126,7 @@ Initial release.
 - README with install instructions for Claude.ai, Desktop, and Code.
 - MIT license.
 
+[0.5.1]: https://github.com/actouf/sage-x3-l4g/releases/tag/v0.5.1
 [0.5.0]: https://github.com/actouf/sage-x3-l4g/releases/tag/v0.5.0
 [0.4.0]: https://github.com/actouf/sage-x3-l4g/releases/tag/v0.4.0
 [0.3.0]: https://github.com/actouf/sage-x3-l4g/releases/tag/v0.3.0

@@ -1,0 +1,37 @@
+title: sage-x3-l4g
+description: Claude skill for writing, reviewing, and debugging Sage X3 V12 L4G code — classes, representations, REST, workflows, reports, batch, security, audit, and more.
+url: https://actouf.github.io
+baseurl: /sage-x3-l4g
+
+theme: jekyll-theme-cayman
+
+# Render Markdown with GitHub-flavored Markdown (tables, fenced code, etc.)
+markdown: kramdown
+kramdown:
+  input: GFM
+  syntax_highlighter: rouge
+  hard_wrap: false
+
+# Ensure relative links between pages keep working when Jekyll rewrites .md -> .html
+permalink: pretty
+
+# Files / directories that are not part of the published site
+exclude:
+  - .github/
+  - .git/
+  - .gitignore
+  - .gitattributes
+  - .claude-plugin/
+  - scripts/
+  - CONTRIBUTING.md
+  - CLAUDE.md
+  - LICENSE
+  - Gemfile
+  - Gemfile.lock
+  - vendor/
+
+# Show "Edit on GitHub" links — picked up by the cayman theme
+github:
+  source:
+    branch: master
+    path: /
