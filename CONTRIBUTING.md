@@ -83,15 +83,39 @@ Run the validation script (checks JSON + ref links):
 
 If it passes and CI passes, you're good.
 
+### What CI does *not* check
+
+- **L4G compilation** — needs a Sage X3 supervisor. Out of scope for the public CI; verify your snippets in your own X3 sandbox before submitting.
+- **Trigger reliability** — `tests/triggers.md` is a manual catalog. Re-run it locally in a fresh Claude session after any `description` change in `SKILL.md`. There is no automated trigger test in CI (it would require an Anthropic API integration that this repo doesn't ship).
+- **Cross-version primitive availability** — `version-caveats.md` documents known drifts; CI can't catch a snippet that uses a primitive missing on patch 22 but present on patch 26. State the verified patch level in the PR.
+
 ## Writing a new reference
 
 1. Add the file under `plugins/sage-x3-l4g/references/<topic>.md`.
-2. Keep it under ~300 lines. If the topic is bigger, split by sub-concern rather than bloating a single file — Claude's progressive disclosure works better with focused files.
-3. Follow the existing structure: introductory paragraph, tables for option grids, `l4g` code blocks, and a **Gotchas** section at the end.
+2. **Keep it under ~300 lines.** If the topic is bigger, split by sub-concern rather than bloating a single file — Claude's progressive disclosure works better with focused files. The validation script doesn't enforce this hard cap, but reviewers do; aim for under 300, accept up to ~340 with a clear reason.
+3. Follow the existing structure: introductory paragraph, tables for option grids, `l4g` code blocks, and a **Gotchas** or **Common pitfalls** section at the end.
 4. Add a row to the reference table in `SKILL.md`.
 5. Add a bullet under "What's inside" in `README.md` and `README_FR.md`.
-6. Cross-link from other references where the topic overlaps.
+6. Cross-link from other references where the topic overlaps. Use `*.md` filenames in backticks — the validator checks they resolve.
 7. Bump the version in `marketplace.json` (minor = new content, patch = corrections) and add a `CHANGELOG.md` entry.
+
+When splitting an existing reference:
+
+- Keep the original filename as a **slim overview / router** if multiple files cross-reference it. Don't break links by deleting the old file.
+- Move detail into new `<topic>-<aspect>.md` files (e.g. `web-services-soap.md`, `web-services-rest.md`).
+- Update every cross-reference in the rest of the repo (`grep -rn 'old-filename.md' plugins/ examples/ tests/`).
+- Run `./scripts/validate.sh` — it catches missing files but not stale pointers, so the grep is on you.
+
+## Releases and tags
+
+Releases follow SemVer: **minor** for new content, **patch** for corrections, **major** only when an existing reference changes shape in a breaking way.
+
+When merging a release-bumping PR:
+
+1. Update `marketplace.json` `version`.
+2. Add a `CHANGELOG.md` entry with the date.
+3. After merging to `master`, tag the merge commit: `git tag vX.Y.Z <sha> && git push origin vX.Y.Z`.
+4. Optionally create a GitHub Release from the tag for marketplace visibility.
 
 ## PR process
 

@@ -1,6 +1,6 @@
 ---
 name: sage-x3-l4g
-description: Write, read, debug, and review Sage X3 V12 4GL code — also called L4G, X3 script, Adonix, or SAFE X3 scripting. Triggers on any mention of Sage X3 development, files with extensions .src, .trt, .adx, .adp, or L4G-specific syntax like [M:...], [F:...], Trbegin, Readlock, Funprog, Subprog, Class, Method, Public, Private, this, Call...From, Onerrgo, Default File, Mask, Inpbox, Infbox, Errbox, Gosub, fstat, adxlog, UPDTICK, or three-letter uppercase table abbreviations (BPC, ITM, SOH, GACC, etc.). Use this skill whenever the user asks about Sage X3 customization, specific scripts, processes, classes, representations, Syracuse, REST endpoints, actions on fields ("actions champs"), entry transactions, workflows, emails (ENVMAIL), reports (IMPRIM), imports/exports (LECFIC), web services (AWS/SOAP), debugging traces, performance / index / Order By Key tuning, security and authorisations (GESAUT, GACTION, GESAFP, function profiles, ACL), batch processing and scheduling (GESABA, GESAPL), personalisation and activity codes (GESAPE, GESACV, patches), localisation (mess, GESAML, multi-currency, multi-language), or code review of L4G. Also use proactively when the user pastes L4G code even without naming it — the bracketed-class syntax, French/English mixed keywords, and `:#` comments are diagnostic.
+description: Write, read, debug, and review Sage X3 V12 4GL code — also called L4G, X3 script, Adonix, or SAFE X3 scripting. Triggers on any mention of Sage X3 development, files with extensions .src, .trt, .adx, .adp, or L4G-specific syntax like [M:...], [F:...], Trbegin, Readlock, Funprog, Subprog, Class, Method, Public, Private, this, Call...From, Onerrgo, Default File, Mask, Inpbox, Infbox, Errbox, Gosub, fstat, adxlog, UPDTICK, or three-letter uppercase table abbreviations (BPC, ITM, SOH, GACC, etc.). Use this skill whenever the user asks about Sage X3 customization, specific scripts, processes, classes, representations, Syracuse, REST endpoints, actions on fields ("actions champs"), entry transactions, workflows, emails (ENVMAIL), reports (IMPRIM), imports/exports (LECFIC), web services (AWS/SOAP), debugging traces, performance / index / Order By Key tuning, security and authorisations (GESAUT, GACTION, GESAFP, function profiles, ACL), batch processing and scheduling (GESABA, GESAPL), personalisation and activity codes (GESAPE, GESACV, patches), localisation (mess, GESAML, multi-currency, multi-language), data migration / cutover / staging tables, post-mortem and incident diagnostics (adxlog.log, stuck locks, hung pools), or code review of L4G. Also use proactively when the user pastes L4G code even without naming it — the bracketed-class syntax, French/English mixed keywords, and `:#` comments are diagnostic.
 ---
 
 # Sage X3 L4G — Development Assistant (V12)
@@ -88,7 +88,8 @@ This skill is organized by concern. Read the relevant reference file when you en
 | File | When to read |
 |------|--------------|
 | `references/web-services-integration.md` | Overview / router: protocol comparison, file exchange, integration logs, cross-cutting gotchas |
-| `references/web-services-soap.md` | Publishing classic SOAP (`GESAWE` / `GESAPO`), calling external SOAP services, WS-Security |
+| `references/web-services-soap.md` | Publishing classic SOAP from X3 (`GESAWE` / `GESAPO`, parameter grid, AWS pool, debug table) |
+| `references/web-services-soap-client.md` | Calling external SOAP services from L4G: envelope, WS-Security, escape, parsing, fault detection |
 | `references/web-services-rest.md` | Publishing REST endpoints (Syracuse), consuming external REST APIs, JSON, OAuth, SData |
 | `references/imports-exports.md` | IMP/EXP templates (`LECFIC`/`EXPFIC`), custom import hooks, delta sync patterns |
 | `references/reports-printing.md` | Launching reports via `IMPRIM`, destinations (`GESADI`), Crystal / native states, Excel exports |
@@ -98,7 +99,10 @@ This skill is organized by concern. Read the relevant reference file when you en
 | `references/security-permissions.md` | `GESAUT` / `GACTION` / `GESAFP`, ACL on services, credential storage, audit logging, SQL/XML/JSON injection |
 | `references/batch-scheduling.md` | `GESABA` / `GESAPL`, recurrent vs one-shot, calendars, dependencies, batch monitoring (`GESALI`/`GESAEX`), pacing, restart safety |
 | `references/personalisation-activity.md` | Activity codes (`GESACV`, `#Active`), personalisation (`GESAPE`), folder hierarchy, patch generation/import, override hygiene |
-| `references/localization.md` | Messages (`mess`, `GESAML`), `[V]GLANGUE`, date / time formats, currencies (`GESCUR`), multi-language email templates, UTF-8 / CJK |
+| `references/localization.md` | Messages (`mess`, `GESAML`), `[V]GLANGUE`, date / time formats, decimal separators, multi-language email templates |
+| `references/localization-formats.md` | Currencies (`GESCUR`, `GDEV.DEVISE`), country addresses (`GESACO` / `FORMAT_ADDR`), RTL / CJK / UTF-8 |
+| `references/data-migration.md` | One-shot loads, staging tables, validation / load / reconcile / cutover, dual-write, schema migration, folder consolidation |
+| `references/diagnostics-postmortem.md` | Reading `adxlog.log`, stuck locks, hung AWS pool, batch failures, engine crashes, incident report template |
 
 ### Meta
 

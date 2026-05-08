@@ -2,6 +2,33 @@
 
 All notable changes to the `sage-x3-l4g` skill. Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning follows [SemVer](https://semver.org/).
 
+## [0.4.0] — 2026-05-08
+
+Strict ~300-line discipline applied to the remaining oversized files; two new operational references; expanded patch-drift catalogue; three new examples; CONTRIBUTING.md updated.
+
+### Added
+- **`references/diagnostics-postmortem.md`** — reading `adxlog.log` (fields, fstat / stat1 / funfat cheat sheets), stuck-lock detection and clearing (`GESALOCK`), hung AWS pool diagnosis, batch failure handling, database-side post-mortem, engine crash triage, hung Syracuse, incident report template.
+- **`references/data-migration.md`** — five-phase playbook (extract → validate → load → reconcile → cutover), staging table pattern with STAT/MSG/BATCH_ID, idempotent loader, count and sum reconciliation, dual-write strategies, in-place schema migration with backfill, folder consolidation, performance during migration.
+- **`references/web-services-soap-client.md`** — split out from `web-services-soap.md`. SOAP client: minimal pattern, WS-Security UsernameToken, XML escape helper, three response-parsing strategies, fault detection, full client wrapper class pattern, client-specific gotchas.
+- **`references/localization-formats.md`** — split out from `localization.md`. Currencies (`GESCUR`, decimals, symbols, conversion via `GDEV.DEVISE`, multi-currency reporting with rate persistence), country addresses (`GESACO` / `FORMAT_ADDR`, postcode validation), right-to-left and CJK pitfalls.
+- **`examples/YBATCH_DAILY.trt`** — recurrent batch template draining an inbox table, per-row tx, dry-run mode, pacing, summary log.
+- **`examples/YPERSO_GESBPC.src`** — personalisation hook on `GESBPC`, gated by activity code, with audit trail.
+- **`examples/YMSG_MULTILANG.src`** — multi-language email helper using recipient language, currency-aware amount formatting, locale-aware date.
+
+### Changed
+- **`references/web-services-soap.md`** trimmed to publishing only (~225 lines); client material moved to `web-services-soap-client.md`.
+- **`references/localization.md`** trimmed to messages, language, dates, numbers (~250 lines); currency / address / RTL / CJK material moved to `localization-formats.md`.
+- **`references/performance.md`** condensed to under 300 lines (merged "pool sizing" + "batch scheduling" sections, tightened raw-SQL hint section).
+- **`references/version-caveats.md`** expanded with: patch-level signature drifts table (12+ helpers across V12 patches 22 → 28), runtime-only divergences (`adxlog`, `fstat` after empty `For`, `[S]adxuprec`, NFC normalization, `format$` thousands separator), folder-config divergences.
+- **`CONTRIBUTING.md`** — explicit ~300-line rule with up-to-340 tolerance, "what CI does NOT check" section (L4G compilation, trigger reliability, cross-version primitives), guidance for splitting an existing reference, releases / tags section.
+- **`SKILL.md`** frontmatter `description` extended with data-migration and post-mortem keywords; reference table updated for the four new files.
+- **`README.md` and `README_FR.md`** reference lists extended.
+- **`examples/README.md`** index extended for the three new examples.
+- **`marketplace.json`** — bumped to `0.4.0`.
+
+### Notes
+- L4G compilation tests, automated trigger validation, and L4G unit testing remain out of scope (no public X3 supervisor, no Anthropic API integration in CI, no widely-adopted L4G unit-test framework). Documented in `CONTRIBUTING.md`.
+
 ## [0.3.0] — 2026-05-07
 
 Major content expansion: review / security / performance / batch / personalisation / localisation references, plus splitting two oversized files to keep each under the ~300-line guideline.
@@ -66,6 +93,7 @@ Initial release.
 - README with install instructions for Claude.ai, Desktop, and Code.
 - MIT license.
 
+[0.4.0]: https://github.com/actouf/sage-x3-l4g/releases/tag/v0.4.0
 [0.3.0]: https://github.com/actouf/sage-x3-l4g/releases/tag/v0.3.0
 [0.2.0]: https://github.com/actouf/sage-x3-l4g/releases/tag/v0.2.0
 [0.1.0]: https://github.com/actouf/sage-x3-l4g/releases/tag/v0.1.0

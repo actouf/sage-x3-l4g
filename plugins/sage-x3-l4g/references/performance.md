@@ -260,19 +260,11 @@ Next
 
 For cross-script caching, use a session global (`[V]Y…`) initialised once at session start.
 
-## Pool sizing — services and batches
+## Concurrency context — pool sizing and batch scheduling
 
-For SOAP / REST services under load, the AWS pool (`GESAPO`) decides how many sessions can run in parallel. See `web-services-soap.md` for sizing. Rule of thumb: `min ≥ peak concurrent callers`, `max ≤ 2 × min`.
+For SOAP / REST services, the AWS pool (`GESAPO`) caps parallel sessions: `min ≥ peak concurrent callers`, `max ≤ 2 × min`. Higher caps invite lock thrashing. See `web-services-soap.md` for the full settings.
 
-Higher caps invite thrashing — when 50 sessions compete for the same locks, throughput drops below the 5-session case.
-
-## Batch scheduling — spread the load
-
-Long-running batches (`GESABA` / `GESAPL`) should not run concurrently with online traffic. Schedule:
-
-- Heavy batches at off-hours (`02:00`–`05:00`).
-- Per-row-tx batches with a small `Sleep` between rows if they touch hot tables.
-- Use the `Recurrent` flag with cron-style scheduling rather than wake-loops.
+For long-running batches (`GESABA` / `GESAPL`), schedule heavy work at off-hours, pace per-row-tx batches with `Sleep` if they touch hot tables, and use the `Recurrent` flag rather than wake-loops. See `batch-scheduling.md`.
 
 ## Common anti-patterns to flag
 
@@ -289,9 +281,7 @@ Long-running batches (`GESABA` / `GESAPL`) should not run concurrently with onli
 | Custom batch wakes every 30 s polling | Use `Recurrent` schedule, not poll |
 | Chains of 5+ `Link` traversals | Replace with `Exec Sql` join — fewer round trips |
 
-## When you actually need raw SQL
-
-Sometimes the engine's plan is wrong (wrong index pick, missing statistics). Force a hint via `Exec Sql` with a vendor-specific directive — but document the reason and revisit on the next major patch / database upgrade. Hints rot fast.
+When the engine's plan is wrong, force a hint via `Exec Sql` with a vendor-specific directive — document the reason; hints rot across patches and DB upgrades.
 
 ## Profiling checklist for a slow custom screen / batch
 

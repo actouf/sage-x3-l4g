@@ -25,7 +25,8 @@ Donne à Claude le vocabulaire, les idiomes et les conventions du L4G (4GL / X3 
 
 **Intégration et exploitation**
 - `references/web-services-integration.md` — vue d'ensemble : comparaison des protocoles, échange de fichiers, logs d'intégration, pièges transverses
-- `references/web-services-soap.md` — publication SOAP classique (`GESAWE` / `GESAPO`), appel de services SOAP externes, WS-Security
+- `references/web-services-soap.md` — publication SOAP classique depuis X3 (`GESAWE` / `GESAPO`, grille de paramètres, pool AWS)
+- `references/web-services-soap-client.md` — appel de services SOAP externes : enveloppe, WS-Security, parsing, faults
 - `references/web-services-rest.md` — publication REST (Syracuse), consommation d'API REST externes, JSON, OAuth, SData
 - `references/imports-exports.md` — templates IMP/EXP (`LECFIC`/`EXPFIC`), hooks d'import, synchronisation delta
 - `references/reports-printing.md` — lancement d'états via `IMPRIM`, destinations (`GESADI`), Crystal / états natifs, export Excel
@@ -35,7 +36,10 @@ Donne à Claude le vocabulaire, les idiomes et les conventions du L4G (4GL / X3 
 - `references/security-permissions.md` — `GESAUT` / `GACTION` / `GESAFP`, ACL sur services, stockage de secrets, audit, prévention des injections
 - `references/batch-scheduling.md` — `GESABA` / `GESAPL`, récurrent vs one-shot, calendriers, dépendances, monitoring, redémarrage sûr
 - `references/personalisation-activity.md` — codes activité (`GESACV`, `#Active`), personnalisation (`GESAPE`), hiérarchie de dossiers, génération/import de patchs
-- `references/localization.md` — messages (`mess`, `GESAML`), `[V]GLANGUE`, formats date/heure, devises (`GESCUR`), templates multilingues, UTF-8 / CJK
+- `references/localization.md` — messages (`mess`, `GESAML`), `[V]GLANGUE`, formats date/heure, séparateurs décimaux, templates multilingues
+- `references/localization-formats.md` — devises (`GESCUR`, `GDEV.DEVISE`), adresses pays (`GESACO` / `FORMAT_ADDR`), RTL / CJK / UTF-8
+- `references/data-migration.md` — tables de staging, validation / chargement / réconciliation / bascule, dual-write, migration de schéma, consolidation de dossiers
+- `references/diagnostics-postmortem.md` — lecture `adxlog.log`, verrous bloqués, pool AWS saturé, échecs de batch, crash moteur, modèle de rapport d'incident
 
 **Méta**
 - `references/code-review-checklist.md` — passe structurée avant d'approuver une modif `.src` / `.trt`, red flags classés par criticité
