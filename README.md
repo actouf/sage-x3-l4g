@@ -1,5 +1,9 @@
 # sage-x3-l4g
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Version](https://img.shields.io/badge/version-0.5.0-blue.svg)](CHANGELOG.md)
+[![Validate skill](https://github.com/actouf/sage-x3-l4g/actions/workflows/validate.yml/badge.svg)](https://github.com/actouf/sage-x3-l4g/actions/workflows/validate.yml)
+
 > 🇬🇧 Claude Skill for writing, reviewing, and debugging Sage X3 V12 L4G code — classes, representations, REST, workflows, reports, Y/Z conventions, ready-to-use recipes.
 >
 > 🇫🇷 Skill Claude pour écrire, relire et déboguer du code Sage X3 V12 L4G — classes, représentations, REST, workflows, états, conventions Y/Z et recettes prêtes à l'emploi.
@@ -40,6 +44,7 @@ Gives Claude the vocabulary, idioms, and conventions of Sage X3 V12 L4G (4GL / X
 - `references/localization-formats.md` — currencies (`GESCUR`, `GDEV.DEVISE`), country addresses (`GESACO` / `FORMAT_ADDR`), RTL / CJK / UTF-8
 - `references/data-migration.md` — staging tables, validation / load / reconcile / cutover, dual-write, schema migration, folder consolidation
 - `references/diagnostics-postmortem.md` — reading `adxlog.log`, stuck locks, hung AWS pool, batch failures, engine crashes, incident report template
+- `references/audit-compliance.md` — audit log pattern, GDPR access / erasure / portability, financial audit trail, retention, consent
 
 **Meta**
 - `references/code-review-checklist.md` — structured pass before approving a `.src` / `.trt` change, red flags ranked by blast radius

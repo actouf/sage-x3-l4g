@@ -9,7 +9,7 @@
       "name": "sage-x3-l4g",
       "source": "./plugins/sage-x3-l4g",
       "description": "Skill for writing, reading, reviewing, and debugging Sage X3 V12 L4G (4GL / X3 script / Adonix) code — classes, representations, REST, workflows, reports.",
-      "version": "0.4.0",
+      "version": "0.5.0",
       "category": "development"
     }
   ]

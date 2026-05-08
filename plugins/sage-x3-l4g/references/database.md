@@ -124,6 +124,21 @@ Next
 
 ## Transactions
 
+### Lifecycle
+
+```mermaid
+stateDiagram-v2
+    [*] --> Idle
+    Idle --> InTransaction: Trbegin [TBL...]
+    InTransaction --> Locked: Readlock / Write / Rewrite / Delete<br/>(holds row + table locks)
+    Locked --> Locked: more DB ops
+    Locked --> Idle: Commit<br/>(persist + release)
+    Locked --> Idle: Rollback<br/>(undo + release)
+    InTransaction --> Idle: Commit / Rollback (no writes)
+```
+
+`[S]adxlog` is non-zero between `Trbegin` and `Commit`/`Rollback`. Use the `If adxlog` idiom (below) to support reusable subprograms.
+
 ### Trbegin — start
 
 ```l4g

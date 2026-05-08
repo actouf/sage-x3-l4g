@@ -68,15 +68,48 @@ Catalog of prompts the skill should react to, used for manual non-regression tes
 | 38 | Stocker une clé API partenaire sans la coder en dur dans le .src | ✅ | `security-permissions.md` |
 | 39 | Audit trail : tracer qui a modifié quoi et quand sur une table sensible | ✅ | `security-permissions.md`, `debugging-traces.md` |
 
+## Diagnostics and post-mortem
+
+| # | Prompt | Should trigger | Consult |
+|---|--------|----------------|---------|
+| 40 | Comment lire un `adxlog.log` pour retrouver l'erreur d'un user ? | ✅ | `diagnostics-postmortem.md` |
+| 41 | `fstat=4` qu'est-ce que ça veut dire et comment je règle ça ? | ✅ | `diagnostics-postmortem.md`, `database.md` |
+| 42 | Une session est bloquée sur un `Readlock` qui ne se libère pas, comment la débloquer ? | ✅ | `diagnostics-postmortem.md` |
+| 43 | Mon pool AWS GESAPO est saturé, les SOAP timeoutent — diagnostic ? | ✅ | `diagnostics-postmortem.md`, `web-services-soap.md`, `performance.md` |
+| 44 | Un batch a fini avec status 4 dans GESAEX, par où je commence ? | ✅ | `diagnostics-postmortem.md`, `batch-scheduling.md` |
+| 45 | Le moteur adonix a crashé avec un SIGSEGV, qu'est-ce qu'on fait ? | ✅ | `diagnostics-postmortem.md` |
+| 46 | Modèle de rapport d'incident pour un P1 X3 | ✅ | `diagnostics-postmortem.md` |
+
+## Data migration
+
+| # | Prompt | Should trigger | Consult |
+|---|--------|----------------|---------|
+| 47 | Plan de migration de notre legacy ERP vers Sage X3, par où on commence ? | ✅ | `data-migration.md` |
+| 48 | Pourquoi passer par une table de staging YSTAGING au lieu de charger direct ? | ✅ | `data-migration.md` |
+| 49 | Mon script de chargement crashe à la ligne 800k sur 1M, comment le rendre idempotent ? | ✅ | `data-migration.md`, `code-review-checklist.md` |
+| 50 | Réconciliation post-migration : comment je prouve que la donnée est complète ? | ✅ | `data-migration.md` |
+| 51 | Stratégie dual-write entre legacy et X3 pendant le cutover | ✅ | `data-migration.md` |
+| 52 | Ajouter un champ obligatoire à BPCUSTOMER avec backfill sur 5M de lignes | ✅ | `data-migration.md`, `personalisation-activity.md`, `performance.md` |
+| 53 | Consolider trois dossiers X3 en un seul, gestion des collisions de clés | ✅ | `data-migration.md` |
+
+## Audit, compliance, retention
+
+| # | Prompt | Should trigger | Consult |
+|---|--------|----------------|---------|
+| 54 | Implémenter un audit trail RGPD-compliant sur BPCUSTOMER | ✅ | `audit-compliance.md`, `security-permissions.md` |
+| 55 | Politique de rétention sur les logs d'intégration et les commandes archivées | ✅ | `audit-compliance.md` |
+| 56 | Droit à l'effacement RGPD : effacer un client tout en gardant les écritures comptables | ✅ | `audit-compliance.md`, `security-permissions.md` |
+| 57 | Export des données personnelles d'un BPC pour répondre à une demande RGPD | ✅ | `audit-compliance.md`, `imports-exports.md` |
+
 ## Review / paste-code
 
 | # | Prompt | Should trigger | Consult |
 |---|--------|----------------|---------|
-| 40 | `Relis ce code: Subprog YFOO ... [F:BPC]BPCNUM = "BP001" ... Write [BPC]` | ✅ | `code-review-checklist.md`, `SKILL.md` red flags |
-| 41 | `[M:BPC]BPCNAM = "Test" : Inpbox ...` — what does this do? | ✅ (Classic fragments) | `screens-and-masks.md` |
-| 42 | `Class YFOO Public Method ... Endclass` — is this V12? | ✅ | `v12-classes-representations.md` |
-| 43 | `Trbegin [SOH] : For [SOH] Where SOHSTA = 1 : Rewrite [SOH] : Next : Commit` — qu'est-ce qui cloche ? | ✅ | `code-review-checklist.md`, `performance.md` |
-| 44 | `Readlock [SOH]SOHNUM0 = NUM : Rewrite [SOH] : Return` — verrou bien libéré ? | ✅ | `code-review-checklist.md`, `database.md` |
+| 58 | `Relis ce code: Subprog YFOO ... [F:BPC]BPCNUM = "BP001" ... Write [BPC]` | ✅ | `code-review-checklist.md`, `SKILL.md` red flags |
+| 59 | `[M:BPC]BPCNAM = "Test" : Inpbox ...` — what does this do? | ✅ (Classic fragments) | `screens-and-masks.md` |
+| 60 | `Class YFOO Public Method ... Endclass` — is this V12? | ✅ | `v12-classes-representations.md` |
+| 61 | `Trbegin [SOH] : For [SOH] Where SOHSTA = 1 : Rewrite [SOH] : Next : Commit` — qu'est-ce qui cloche ? | ✅ | `code-review-checklist.md`, `performance.md` |
+| 62 | `Readlock [SOH]SOHNUM0 = NUM : Rewrite [SOH] : Return` — verrou bien libéré ? | ✅ | `code-review-checklist.md`, `database.md` |
 
 ## Should NOT trigger
 

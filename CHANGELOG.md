@@ -2,6 +2,22 @@
 
 All notable changes to the `sage-x3-l4g` skill. Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning follows [SemVer](https://semver.org/).
 
+## [0.5.0] — 2026-05-08
+
+Audit / compliance reference, expanded triggers catalogue, Mermaid diagrams, README badges, CI branch fix.
+
+### Added
+- **`references/audit-compliance.md`** — append-only audit log table pattern with single `YAUDIT_LOG` helper, GDPR right to access (Art. 15) export skeleton, right to erasure (Art. 17) via pseudonymisation that preserves accounting links, data portability (Art. 20), financial audit trail (SOX / FCC) with reversal-entry pattern, retention policy (`YRETENTION_POLICY` table + nightly batch), consent tracking, regulator-facing reporting, anti-patterns, full checklist.
+- **18 new triggers** in `tests/triggers.md` — sections for diagnostics / post-mortem (7 prompts), data migration (7 prompts), audit / compliance / retention (4 prompts). Catalog now covers 62 prompts.
+- **Mermaid diagrams** in three references: folder hierarchy in `personalisation-activity.md`, transaction lifecycle in `database.md`, batch lifecycle in `batch-scheduling.md`.
+- **README badges** — license, version, CI status — on both `README.md` and `README_FR.md`.
+
+### Changed
+- **`marketplace.json`** — bumped to `0.5.0`.
+- **`SKILL.md`** frontmatter `description` extended with audit / GDPR / compliance / retention keywords; reference table extended.
+- **`README.md` and `README_FR.md`** reference lists extended.
+- **`.github/workflows/validate.yml`** — CI now triggers on `master` (the actual default branch) in addition to `main`. The badge now reflects real build status.
+
 ## [0.4.0] — 2026-05-08
 
 Strict ~300-line discipline applied to the remaining oversized files; two new operational references; expanded patch-drift catalogue; three new examples; CONTRIBUTING.md updated.
@@ -93,6 +109,7 @@ Initial release.
 - README with install instructions for Claude.ai, Desktop, and Code.
 - MIT license.
 
+[0.5.0]: https://github.com/actouf/sage-x3-l4g/releases/tag/v0.5.0
 [0.4.0]: https://github.com/actouf/sage-x3-l4g/releases/tag/v0.4.0
 [0.3.0]: https://github.com/actouf/sage-x3-l4g/releases/tag/v0.3.0
 [0.2.0]: https://github.com/actouf/sage-x3-l4g/releases/tag/v0.2.0
