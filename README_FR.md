@@ -1,14 +1,17 @@
 # sage-x3-l4g
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-0.5.0-blue.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.5.1-blue.svg)](CHANGELOG.md)
 [![Validate skill](https://github.com/actouf/sage-x3-l4g/actions/workflows/validate.yml/badge.svg)](https://github.com/actouf/sage-x3-l4g/actions/workflows/validate.yml)
+[![Docs](https://img.shields.io/badge/docs-actouf.github.io-brightgreen)](https://actouf.github.io/sage-x3-l4g/)
 
 > Skill Claude pour écrire, relire et déboguer du code Sage X3 V12 L4G — classes, représentations, REST, workflows, états, conventions Y/Z et recettes prêtes à l'emploi.
 
 _[English version → README.md](README.md)_
 
 Donne à Claude le vocabulaire, les idiomes et les conventions du L4G (4GL / X3 script / Adonix) pour qu'il produise du code correct dès le premier essai. Focus V12 — le Classic (V6) est couvert uniquement là où il tourne encore en V12.
+
+**[Parcourir les références en ligne → actouf.github.io/sage-x3-l4g](https://actouf.github.io/sage-x3-l4g/)** — même contenu que ci-dessous, navigable sans cloner.
 
 ## Contenu
 

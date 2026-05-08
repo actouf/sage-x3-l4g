@@ -1,14 +1,17 @@
 # sage-x3-l4g
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-0.5.0-blue.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.5.1-blue.svg)](CHANGELOG.md)
 [![Validate skill](https://github.com/actouf/sage-x3-l4g/actions/workflows/validate.yml/badge.svg)](https://github.com/actouf/sage-x3-l4g/actions/workflows/validate.yml)
+[![Docs](https://img.shields.io/badge/docs-actouf.github.io-brightgreen)](https://actouf.github.io/sage-x3-l4g/)
 
 > 🇬🇧 Claude Skill for writing, reviewing, and debugging Sage X3 V12 L4G code — classes, representations, REST, workflows, reports, Y/Z conventions, ready-to-use recipes.
 >
 > 🇫🇷 Skill Claude pour écrire, relire et déboguer du code Sage X3 V12 L4G — classes, représentations, REST, workflows, états, conventions Y/Z et recettes prêtes à l'emploi.
 
 Gives Claude the vocabulary, idioms, and conventions of Sage X3 V12 L4G (4GL / X3 script / Adonix) so it produces correct code on the first try. V12-focused — Classic (V6) syntax covered where it's still running in V12.
+
+**[Browse the rendered references → actouf.github.io/sage-x3-l4g](https://actouf.github.io/sage-x3-l4g/)** — same content as below, laid out for navigation without cloning.
 
 ## What's inside
 
