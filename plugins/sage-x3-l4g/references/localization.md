@@ -1,8 +1,8 @@
-# Localisation — messages, currencies, dates, formats
+# Localisation — messages, language, dates, numbers
 
-How to write code that runs in a French folder, an English folder, a German folder, and a Japanese folder without rewriting strings, dates, numbers, currency symbols, or address formats. Covers `mess()`, `GESAML` chapters, `[V]GLANGUE`, multi-currency parameters, date / time format codes, and translation discipline for templates and emails.
+How to write code that runs in a French folder, an English folder, a German folder, and a Japanese folder without rewriting strings, dates, or numbers. Covers `mess()`, `GESAML` chapters, `[V]GLANGUE`, date / time format codes, and decimal-separator handling.
 
-For naming conventions (chapters, three-letter codes), see `conventions-and-naming.md`. For email templates that need to localise their body, see `workflow-email.md`.
+For currencies (`GESCUR`), country-specific addresses (`GESACO`), and right-to-left / CJK pitfalls, see `localization-formats.md`. For naming conventions (chapters, three-letter codes), see `conventions-and-naming.md`. For email templates that need to localise their body, see `workflow-email.md`.
 
 ## The localisation surfaces in X3
 
@@ -190,72 +190,13 @@ V = val([L]INPUT)
 
 For amounts, decimals depend on the currency (`GESCUR` defines them per code) — see the currency section below.
 
-## Currencies (`GESCUR` / `GESDEV`)
+## Currencies, addresses, RTL/CJK
 
-Path: **Setup → Currencies → Currencies**.
+These topics moved to `localization-formats.md`:
 
-`GESCUR` declares currency codes (`EUR`, `USD`, `JPY`, etc.) with their attributes:
-
-| Field | Use |
-|-------|-----|
-| `CUR` | 3-letter code |
-| `CURDES` | Description (per language) |
-| `CURSYM` | Symbol (`€`, `$`, `¥`) |
-| `CURDEC` | Number of decimals (`2` for EUR, `0` for JPY) |
-| `EUR` | Euro flag (legacy zone-EUR rules) |
-
-Read them via `func AFNC.PARAMG`:
-
-```l4g
-Local Char    SYM(5)
-Local Integer DEC
-
-SYM = func AFNC.PARAMG("CUR", "EUR", "SYM")     # "€"
-DEC = val(func AFNC.PARAMG("CUR", "EUR", "DEC"))  # 2
-
-Local Char AMT_STR(20)
-AMT_STR = format$("F" + num$(DEC), [F:SOH]AMT) - " " - SYM
-```
-
-### Multi-currency calculation
-
-Always store amounts with their currency code (`AMT` + `CUR` columns). When converting:
-
-```l4g
-Local Decimal RATE, AMT_EUR
-Call DEVISE([F:SOH]CUR, "EUR", [F:SOH]ORDDAT, RATE) From GDEV
-AMT_EUR = [F:SOH]AMT * RATE
-```
-
-`GDEV.DEVISE` looks up the rate from `GESCURRATE` for the given pair and date. Use the order date for historical rates, not `date$`.
-
-## Address formats — country-specific
-
-Customer addresses don't fit a single template:
-
-```
-US:                    UK:                    JP:
-Name                   Name                   〒postcode
-Street                 Street                 prefecture city
-City, State Zip        City                   street block-house
-                       Postcode               Name
-```
-
-`GESACO` (countries) defines the address layout per country, including:
-
-- Field order (street → city → zip vs zip → city → street)
-- Postcode format / validation pattern
-- Mandatory fields per country
-
-When displaying or printing an address, call the standard formatter:
-
-```l4g
-Local Char ADDR_FMT(500)
-Call FORMAT_ADDR([F:BPA]CRY, [F:BPA]ADDLIG(0), [F:BPA]CTY, [F:BPA]POSCOD, ADDR_FMT) From GESACO
-# ADDR_FMT contains a country-correctly-formatted multi-line address
-```
-
-`FORMAT_ADDR` is one of several standard helpers — verify the exact signature on your patch level (`version-caveats.md`).
+- Currencies (`GESCUR` / `GESDEV`), `CURDEC`/`CURSYM`, `GDEV.DEVISE` conversion, rounding and reporting
+- Country-specific address layouts via `GESACO` / `FORMAT_ADDR`, postcode validation
+- Right-to-left and double-byte / CJK languages (UTF-8 byte vs character, sort order, fonts)
 
 ## Translation discipline for emails and templates
 
@@ -287,37 +228,26 @@ Call ENVMAIL([F:BPC]EMAIL, "", "", SUBJECT, BODY, "", "") From AMAIL
 
 The template-with-placeholder pattern (`%CUSTOMER%` etc.) keeps translatable copy separate from variable substitution.
 
-## Right-to-left and double-byte languages
-
-Arabic, Hebrew (RTL), and CJK languages bring extra concerns:
-
-- **Field lengths** in bytes vs characters — UTF-8 multi-byte characters fill `Char(60)` faster than Latin. Increase widths for fields holding non-Latin text.
-- **`len$()` vs `nchar$()`** — `len$()` returns byte count, `nchar$()` (when available) returns character count. Use the right one for length checks.
-- **String trimming** — `left$`, `right$`, `mid$` work on bytes; truncating mid-character corrupts UTF-8.
-- **Sort order** — locale-aware sort requires `Order By` with explicit collation, not `Order By Key` alone. SQL-side `Exec Sql` with the right collation works; pure L4G ordering may misorder accents and CJK.
-
-For these languages, test every screen and every printed report with real content before signing off.
-
 ## Common pitfalls
 
 - **Literal English string** in production code that runs in French — caught by `code-review-checklist.md` Tier 2.
 - **Hardcoded date format** — `num$(D, "MM/DD/YYYY")` ships, French users see `12/15/2024` and read it as 12 December 15 (which doesn't exist). Use `[V]GFORMA`.
-- **Hardcoded currency decimals** — `format$("F2", AMT)` ships and breaks for JPY (which has 0 decimals). Look up `CURDEC`.
-- **Currency mismatch in totals** — summing `[F:SOH]AMT` across orders without converting to a base currency. Always convert and store both raw and base.
 - **Mess number reused across chapters** — `mess(45, 100, 1)` and `mess(45, 1000, 1)` are different messages. Document chapters in a per-project chapter map.
 - **Non-existent language code** — `mess(n, ch, "XXX")` returns the language-1 fallback silently, which looks fine in dev (where the engine is in French) and broken in prod.
-- **Truncating a UTF-8 string** with `left$()` — display garbage on screen for the cut-mid-character row. Use `nchar$()`-aware truncation.
 - **Email template not translated** — recipients in other languages get the default-language body. Always provide translations or fall back to a marked "untranslated" version.
+- **Decimal separator** — parsing user-typed amounts without normalizing `,` → `.` first. French users type `12,50`; `val()` returns `12`.
 
-## Localisation checklist
+For currency-, address-, and CJK-specific pitfalls, see `localization-formats.md`.
+
+## Messages-and-dates checklist
 
 1. Every user-facing string goes through `mess()`?
 2. Every date display uses `[V]GFORMA` or an explicit ISO format for logs?
-3. Every amount display reads `CURDEC` / `CURSYM` from `GESCUR`?
-4. Currency conversions use the right date and a real exchange rate?
-5. Address output uses `FORMAT_ADDR` or the country layout?
-6. Email templates exist in every supported language?
-7. Field lengths sized for UTF-8 multi-byte content?
-8. New custom chapter declared in `GESAML` and reserved in your project's chapter map?
+3. Every date parse uses `gdat` and checks the error flag?
+4. Email templates exist in every supported language?
+5. New custom chapter declared in `GESAML` and reserved in your project's chapter map?
+6. User-typed numbers normalised before `val()`?
 
-See also: `conventions-and-naming.md` (chapter ranges, Y/Z rule), `workflow-email.md` (`ENVMAIL`, multi-language email templates), `builtin-functions.md` (`format$`, `num$`, `gdat`), `code-review-checklist.md` (Tier 2 — hardcoded strings), `version-caveats.md` (`mess` signature variants, `FORMAT_ADDR` availability).
+For currency, addresses, and CJK / RTL: see the checklist in `localization-formats.md`.
+
+See also: `localization-formats.md` (currencies, addresses, RTL/CJK), `conventions-and-naming.md` (chapter ranges, Y/Z rule), `workflow-email.md` (`ENVMAIL`, multi-language email templates), `builtin-functions.md` (`format$`, `num$`, `gdat`), `code-review-checklist.md` (Tier 2 — hardcoded strings), `version-caveats.md` (`mess` signature variants).

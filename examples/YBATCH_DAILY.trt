@@ -1,0 +1,98 @@
+##############################################################
+# YBATCH_DAILY — recurrent batch template (every 15 min).
+# Drains a custom inbox table (YINBOX), processes new rows
+# atomically, marks each one done; pacing is built in.
+#
+# Declared in GESABA with two parameters:
+#   1. CHUNK    Integer    default 100   max rows per run
+#   2. DRY      Char(1)    default "N"   "Y" = log only, no write
+#
+# Schedule in GESAPL with Recurrent = Yes, interval 15 min,
+# bound to a calendar that excludes nights and weekends if
+# the inbox feeder is also paused then.
+#
+# Demonstrates: $MAIN script structure, parameter reading
+# with defaults, per-row transactions inside a For, idempotent
+# processing via STAT column, pacing with Sleep on a hot table,
+# end-of-run summary log.
+##############################################################
+
+$MAIN
+
+Local File YINBOX [YIN], BPCUSTOMER [BPC]
+Local Integer CHUNK, N_OK, N_KO, I
+Local Char    DRY(1)
+
+# 1. Read parameters with safe defaults
+CHUNK = val([V]GPARAM1)
+If CHUNK <= 0 Or CHUNK > 10000 : CHUNK = 100 : Endif
+DRY = [V]GPARAM2
+If DRY = "" : DRY = "N" : Endif
+
+Call YLOG_BATCH("YBATCH_DAILY", "START",
+    "chunk=" + num$(CHUNK) + ",dry=" + DRY) From YBATCHLOG
+
+N_OK = 0
+N_KO = 0
+I = 0
+
+# 2. Drain pending rows, capped at CHUNK
+For [YIN] Where STAT = 0 Order By Key INBKEY0
+    If I >= CHUNK : Exitfor : Endif
+    Incr I
+
+    # 2a. Validate the inbox row
+    Read [BPC]BPCNUM0 = [F:YIN]BPCNUM
+    If fstat
+        [F:YIN]STAT = 3
+        [F:YIN]MSG  = "Unknown BPC: " - [F:YIN]BPCNUM
+        Trbegin [YIN]
+        Rewrite [YIN]
+        If fstat : Rollback : Else : Commit : Endif
+        Incr N_KO
+        Continue
+    Endif
+
+    # 2b. Apply (skipped in dry-run)
+    If DRY = "N"
+        Trbegin [BPC], [YIN]
+        Update BPCUSTOMER Where BPCNUM = [F:YIN]BPCNUM
+            With YOPCNT = YOPCNT + [F:YIN]CNT,
+                 UPDTICK = UPDTICK + 1
+        If fstat Or [S]adxuprec = 0
+            Rollback
+            [F:YIN]STAT = 3
+            [F:YIN]MSG  = "Update failed fstat=" + num$(fstat)
+            Trbegin [YIN]
+            Rewrite [YIN]
+            If fstat : Rollback : Else : Commit : Endif
+            Incr N_KO
+            Continue
+        Endif
+
+        [F:YIN]STAT = 1
+        [F:YIN]PROCDAT = date$
+        [F:YIN]PROCTIM = time$
+        Rewrite [YIN]
+        If fstat : Rollback : Continue : Endif
+        Commit
+    Else
+        Call ECRAN_TRACE("DRY: would apply " - [F:YIN]INBKEY, 0) From GESECRAN
+    Endif
+
+    Incr N_OK
+
+    # 2c. Pace on a hot table to avoid starving online users
+    If mod(I, 25) = 0 : Sleep 1 : Endif
+Next
+
+# 3. End-of-run summary
+Call YLOG_BATCH("YBATCH_DAILY", "END",
+    "ok=" + num$(N_OK) + ",ko=" + num$(N_KO) + ",seen=" + num$(I)) From YBATCHLOG
+
+# 4. No Infbox / Errbox — runs as a batch, no user
+If N_KO > 0
+    Call ECRAN_TRACE("YBATCH_DAILY ended with " - num$(N_KO) - " errors", 2) From GESECRAN
+Endif
+
+Return

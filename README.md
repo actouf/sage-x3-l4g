@@ -25,7 +25,8 @@ Gives Claude the vocabulary, idioms, and conventions of Sage X3 V12 L4G (4GL / X
 
 **Integration and operations**
 - `references/web-services-integration.md` — overview and router: protocol comparison, file exchange, integration logs, cross-cutting gotchas
-- `references/web-services-soap.md` — publishing classic SOAP (`GESAWE` / `GESAPO`), calling external SOAP, WS-Security
+- `references/web-services-soap.md` — publishing classic SOAP from X3 (`GESAWE` / `GESAPO`, parameter grid, AWS pool)
+- `references/web-services-soap-client.md` — calling external SOAP services: envelope, WS-Security, parsing, fault detection
 - `references/web-services-rest.md` — publishing REST (Syracuse), consuming external REST APIs, JSON, OAuth, SData
 - `references/imports-exports.md` — IMP/EXP templates (`LECFIC`/`EXPFIC`), custom import hooks, delta sync patterns
 - `references/reports-printing.md` — launching reports via `IMPRIM`, destinations (`GESADI`), Crystal / native states, Excel exports
@@ -35,7 +36,10 @@ Gives Claude the vocabulary, idioms, and conventions of Sage X3 V12 L4G (4GL / X
 - `references/security-permissions.md` — `GESAUT` / `GACTION` / `GESAFP`, ACL on services, credential storage, audit logging, injection prevention
 - `references/batch-scheduling.md` — `GESABA` / `GESAPL`, recurrent vs one-shot, calendars, dependencies, monitoring, restart safety
 - `references/personalisation-activity.md` — activity codes (`GESACV`, `#Active`), personalisation (`GESAPE`), folder hierarchy, patch generation/import
-- `references/localization.md` — messages (`mess`, `GESAML`), `[V]GLANGUE`, date / time formats, currencies (`GESCUR`), multi-language templates, UTF-8 / CJK
+- `references/localization.md` — messages (`mess`, `GESAML`), `[V]GLANGUE`, date / time formats, decimal separators, multi-language templates
+- `references/localization-formats.md` — currencies (`GESCUR`, `GDEV.DEVISE`), country addresses (`GESACO` / `FORMAT_ADDR`), RTL / CJK / UTF-8
+- `references/data-migration.md` — staging tables, validation / load / reconcile / cutover, dual-write, schema migration, folder consolidation
+- `references/diagnostics-postmortem.md` — reading `adxlog.log`, stuck locks, hung AWS pool, batch failures, engine crashes, incident report template
 
 **Meta**
 - `references/code-review-checklist.md` — structured pass before approving a `.src` / `.trt` change, red flags ranked by blast radius

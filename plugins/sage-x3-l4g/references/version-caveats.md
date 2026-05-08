@@ -79,6 +79,48 @@ Conditional compilation runs at **compile time** based on the folder's active ac
 
 **Action:** after toggling an activity code, `force recompile all` from the supervisor, or delete `<folder>/ADX/` contents and let the engine re-cache.
 
+## Patch-level signature drifts (known)
+
+The following signature changes are commonly encountered when moving between patch levels. None are universal — verify by reading the standard `Subprog` declaration on your folder.
+
+| Helper | Patch range | Drift |
+|--------|-------------|-------|
+| `ENVMAIL` | V12 ≤ 22 vs ≥ 24 | Older patches: 6 args (recipient, cc, bcc, subject, body, attach). Newer: 7th arg `replyto` added. Calling the older signature with 7 args fails compile; calling new with 6 fails at runtime. |
+| `ENVMAILHTML` | V12 ≥ 26 only | Not present on patches < 26. Build the HTML body yourself and pass `Content-Type: text/html` via the standard hook on older patches. |
+| `func AFNC.JSONGET` | V12 ≥ 24 | Dotted-path keys (`"rates.USD"`) work on ≥ 26; flat keys only on 24-25. |
+| `func AFNC.JSONSET` | V12 ≥ 26 | Not on earlier patches. Build the JSON string by concatenation if absent. |
+| `Class … Method` | V12 ≥ 24 | Earlier V12 (and V7) accept `Class … Funprog/Subprog` only — no `Method` keyword. |
+| `Public Const` inside a class | V12 ≥ 26 | Earlier patches: declare constants as global variables instead. |
+| `UPDTICK` standard fill | V12 ≥ 22 | The supervisor auto-increments `UPDTICK` on `Write`/`Rewrite` of standard tables on ≥ 22. On older patches, set it explicitly: `[F:TBL]UPDTICK = [F:TBL]UPDTICK + 1`. |
+| `Top N` in `Update Where` | V12 ≥ 24 | The `Top 1` qualifier on `Update` is supported on ≥ 24. On older, work around with explicit `Read` + `Rewrite`. |
+| `func ASYSTEM.ParseJson` | V12 ≥ 28 | Newer DOM-style helper; absent earlier. |
+| `Sleep$ "0.1"` | V12 ≥ 26 | Sub-second sleep. Earlier: only integer seconds (`Sleep 1`); use `System "sleep 0.1"` if needed. |
+| `mess(n, ch, "ENG")` | V12 ≥ 26 | Three-letter language code as `lang` arg. Earlier patches accept only numeric (1 = current, 2 = next, …) or implicit. |
+| `Exec Sql … On 0 Into` | universal V12 | Stable, but the variable types on the `Into` clause are validated more strictly on ≥ 28 — implicit conversions that worked on 22 may fail. |
+| `For [TBL] Where … Top N` | V12 ≥ 24 | `Top` clause on `For`. Earlier: count manually with `If N >= LIMIT : Exitfor : Endif`. |
+| Syracuse REST URL shape | drifts continually | `/api/x3/erp/<folder>` on most ≥ 24; some installs `/api1/<col>/<folder>`. Always verify with `$metadata`. |
+
+**Action:** when copy-pasting a snippet that uses any of these, check the patch level of the target folder. The minor changes that are silent on the development folder become production crashes elsewhere.
+
+## Common runtime-only divergences
+
+These compile cleanly across patches but behave differently:
+
+- **`adxlog` value across `Trbegin` / `Commit`** — on most V12 the system flag is non-zero inside a transaction; some early V12 patches set it only after the first DB op inside the transaction. The `If adxlog` idiom from `database.md` is robust to both.
+- **`fstat` after a `For` with no rows** — older patches set `fstat = 0` after entering an empty `For`, newer patches set a non-zero "no rows" status. Don't infer "rows existed" from `fstat` alone.
+- **`[S]adxuprec` on `Update`** — populated reliably on ≥ 22; on earlier folders, count via the rowcount of a follow-up `Read`.
+- **Unicode normalization on `Read` by key** — newer patches normalize NFC before comparing; older don't. A French customer name with NFD-encoded accents matches the index on new and misses on old.
+- **`format$` thousands separator** — on locales that use `'` as thousands separator (Swiss French), `format$` adds it on ≥ 26 and not before. Documents shipped on patch upgrade may suddenly format differently.
+
+## Folder-config divergences (not patch-related)
+
+Even on the same patch, folder configuration can change behaviour:
+
+- **Activity codes** — a snippet using `Y`-prefixed tables compiles only when the activity is on. See `personalisation-activity.md`.
+- **Module dependencies** — `Call` to a script in a module not installed on the target folder fails at runtime, not at compile.
+- **Supervisor user ACL** — batch user without ACL on a touched table silently writes nothing on some configs; throws on others.
+- **Trace destination** — `ECRAN_TRACE` writes to screen in interactive sessions, to `adxlog.log` in batch. A trace test that works in dev may "vanish" in prod batch.
+
 ## How to use this file when reviewing code
 
 If you're code-reviewing someone's L4G and they've copied a snippet from this skill:

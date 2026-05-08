@@ -1,0 +1,130 @@
+##############################################################
+# YMSG_MULTILANG — multi-language email helper.
+#
+# Sends a notification to a customer in *their* language,
+# regardless of the sender's session language.
+#
+# Demonstrates: mess() with explicit language code, falling
+# back to session language when the partner's language is
+# unset, placeholder substitution in a translated template,
+# date / amount formatting in the recipient's locale,
+# attachment path discipline (TMP/), error handling with
+# ENVMAIL stat1 plus log entry.
+#
+# Messages used (declare in GESAML, custom chapter 1000):
+#   1000:200  "Confirmation de commande %ORDER%"
+#   1000:201  "Bonjour %NAME%,
+#              Votre commande %ORDER% du %DATE% pour %AMOUNT% a été enregistrée.
+#              Cordialement"
+#
+# (English / German / Spanish translations declared on the
+# same numbers.)
+##############################################################
+
+Funprog YMSG_NOTIFY_ORDER(BPC, ORDNUM)
+Value Char BPC()
+Value Char ORDNUM()
+
+    Local File BPCUSTOMER [BPCX], SORDER [SOH]
+    Local Char    SUBJECT(200), BODY(4000), LAN(3), AMT_STR(30)
+    Local Char    EMAIL(100), CUR(3)
+    Local Integer DEC
+
+    # 1. Resolve recipient
+    Read [BPCX]BPCNUM0 = BPC
+    If fstat
+        Call ECRAN_TRACE("YMSG_NOTIFY_ORDER: unknown BPC " - BPC, 2) From GESECRAN
+        End 1
+    Endif
+    EMAIL = [F:BPCX]EMAIL
+    If EMAIL = ""
+        Call ECRAN_TRACE("YMSG_NOTIFY_ORDER: no email for " - BPC, 1) From GESECRAN
+        End 1
+    Endif
+
+    # 2. Pick the recipient's language; fall back to session
+    LAN = [F:BPCX]LAN
+    If LAN = "" : LAN = [V]GLANGUE : Endif
+
+    # 3. Resolve order
+    Read [SOH]SOHNUM0 = ORDNUM
+    If fstat
+        Call ECRAN_TRACE("YMSG_NOTIFY_ORDER: unknown order " - ORDNUM, 2) From GESECRAN
+        End 1
+    Endif
+
+    # 4. Currency-aware amount formatting
+    CUR = [F:SOH]CUR
+    DEC = val(func AFNC.PARAMG("CUR", CUR, "DEC"))
+    AMT_STR = format$("F" + num$(DEC), [F:SOH]ORDAMT) -
+              " " - func AFNC.PARAMG("CUR", CUR, "SYM")
+
+    # 5. Build subject and body in the recipient's language
+    #    Note: mess() third arg is a numeric flag on older patches
+    #    and a 3-letter code on V12 patch >= 26 — see version-caveats.md.
+    #    The form below uses the numeric flag with a lookup.
+    Local Integer LAN_FLAG
+    LAN_FLAG = func YMSG_LANGFLAG(LAN)
+
+    SUBJECT = mess(200, 1000, LAN_FLAG)
+    SUBJECT = replace$(SUBJECT, "%ORDER%", ORDNUM)
+
+    BODY = mess(201, 1000, LAN_FLAG)
+    BODY = replace$(BODY, "%NAME%",   [F:BPCX]BPCNAM(0))
+    BODY = replace$(BODY, "%ORDER%",  ORDNUM)
+    BODY = replace$(BODY, "%DATE%",   num$([F:SOH]ORDDAT, func YMSG_DATEFMT(LAN)))
+    BODY = replace$(BODY, "%AMOUNT%", AMT_STR)
+
+    # 6. Send — never inline credentials, ENVMAIL reads SMTP config
+    Call ENVMAIL(EMAIL, "", "", SUBJECT, BODY, "", "") From AMAIL
+    If [S]stat1
+        Call ECRAN_TRACE("ENVMAIL stat1=" + num$([S]stat1) - " for " - EMAIL, 2) From GESECRAN
+        End 1
+    Endif
+
+    # 7. Log the send
+    Local File YINTLOG [YIL]
+    Raz [F:YIL]
+    [F:YIL]INTDAT = date$
+    [F:YIL]INTTIM = time$
+    [F:YIL]CHAN   = "MAIL"
+    [F:YIL]TARGET = EMAIL
+    [F:YIL]REF    = ORDNUM
+    [F:YIL]LAN    = LAN
+    [F:YIL]STA    = "OK"
+    Trbegin [YIL]
+    Write [YIL]
+    If fstat : Rollback : Else : Commit : Endif
+
+End 0
+
+
+##############################################################
+# YMSG_LANGFLAG — map a 3-letter language code to the numeric
+# flag mess() expects on patches that don't accept the code.
+##############################################################
+Funprog YMSG_LANGFLAG(LAN)
+Value Char LAN()
+    # 1 = current session language (mess() native)
+    # 2..N = look up in TABLAN if the project uses it
+    If LAN = "" Or LAN = [V]GLANGUE : End 1 : Endif
+
+    # Otherwise: map via TABLAN if available; default to 1
+    Local File TABLAN [TLA]
+    Read [TLA]LAN0 = LAN
+    If !fstat
+        End [F:TLA]LANNUM
+    Endif
+    End 1
+End
+
+
+##############################################################
+# YMSG_DATEFMT — return the date format string for a language.
+##############################################################
+Funprog YMSG_DATEFMT(LAN)
+Value Char LAN()
+    Local Char FMT(20)
+    FMT = func AFNC.PARAMG("YLAN", LAN, "DATFMT")
+    If FMT = "" : FMT = "AAAA-MM-JJ" : Endif    # ISO fallback
+End FMT

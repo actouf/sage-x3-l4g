@@ -9,6 +9,9 @@ Compilable L4G fixtures illustrating the idioms the skill teaches. Each file is 
 | `YCTRL_FIELD.trt` | Field-control actions: format checks, Luhn SIREN, cross-field save guard | `screens-and-masks.md`, `common-patterns.md` |
 | `YIMP_HOOK.src` | Import template hooks: per-line validation + end-of-run logging | `imports-exports.md` |
 | `YBATCH_ORPHANS.trt` | Scheduled batch: email report of orphan orders, persistent run log | `common-patterns-v12.md`, `workflow-email.md`, `debugging-traces.md` |
+| `YBATCH_DAILY.trt` | Recurrent batch template: drains an inbox table, per-row tx, dry-run mode, pacing, summary log | `batch-scheduling.md`, `performance.md` |
+| `YPERSO_GESBPC.src` | Personalisation hook on `GESBPC`: gated by activity code, applies a default value, audit trail | `personalisation-activity.md`, `security-permissions.md` |
+| `YMSG_MULTILANG.src` | Multi-language email helper: recipient-language `mess()`, currency-aware amount, locale-aware date | `localization.md`, `localization-formats.md`, `workflow-email.md` |
 
 All examples follow the skill's house style: PascalCase keywords, UPPERCASE identifiers, 2-space indent, explicit bracket prefixes, `fstat` check after every DB/file op, `If adxlog` for nested-transaction safety.
 

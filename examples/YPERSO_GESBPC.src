@@ -1,0 +1,75 @@
+##############################################################
+# YPERSO_GESBPC — custom action attached via GESAPE
+# to the GESBPC (customer entry) screen.
+#
+# This script is NOT an override of standard GESBPC code —
+# it's a personalisation hook. GESAPE points the standard
+# screen's "after save" event to this Subprog when activity
+# code YINTBPC is enabled. Standard source stays untouched.
+#
+# Demonstrates: gating with #Active, reading [M:BPC] mask
+# fields after standard save, conditional update gated by
+# activity code, exit through End (no Infbox in this hook
+# path because it can be re-entered by chained actions).
+##############################################################
+
+#Active YINTBPC
+
+Subprog YPERSO_GESBPC()
+
+    # 1. Activity-code re-check at runtime — belt and braces
+    If [V]YINTBPC <> 1
+        End
+    Endif
+
+    # 2. Authorisation check — see security-permissions.md
+    Local Integer OK
+    Call CTRACT("BPC", "YINTBPC", OK) From GACTION
+    If !OK
+        # Standard saved fine; the personalisation step is denied.
+        Call ECRAN_TRACE("YINTBPC denied for " - [V]GUSER, 0) From GESECRAN
+        End
+    Endif
+
+    # 3. Read the customer that was just saved by standard code
+    Local File BPCUSTOMER [BPC]
+    Read [BPC]BPCNUM0 = [M:BPC]BPCNUM
+    If fstat : End : Endif
+
+    # 4. Apply the custom logic — set a default priority based
+    #    on category if the field was left empty.
+    If [F:BPC]YPRIORITY = ""
+        Local Char  PRIO(10)
+        PRIO = func AFNC.PARAMG("YDFLT", [F:BPC]BPCCAT, "YPRIO")
+        If PRIO = "" : PRIO = "STD" : Endif
+
+        Trbegin [BPC]
+        Update BPCUSTOMER Where BPCNUM = [F:BPC]BPCNUM
+            With YPRIORITY = PRIO,
+                 UPDTICK  = UPDTICK + 1
+        If fstat Or [S]adxuprec = 0
+            Rollback
+            Call ECRAN_TRACE("YPERSO_GESBPC update failed fstat=" + num$(fstat), 2) From GESECRAN
+            End
+        Endif
+        Commit
+    Endif
+
+    # 5. Audit trail — required because the personalisation
+    #    bypasses the standard's audit hooks for custom fields.
+    Local File YAUDITLOG [YAU]
+    Raz [F:YAU]
+    [F:YAU]LOGDAT = date$
+    [F:YAU]LOGTIM = time$
+    [F:YAU]LOGUSER = [V]GUSER
+    [F:YAU]TBL    = "BPCUSTOMER"
+    [F:YAU]TBLKEY = [F:BPC]BPCNUM
+    [F:YAU]ACTION = "YPERSO_PRIO"
+    [F:YAU]DETAIL = "Priority defaulted"
+    Trbegin [YAU]
+    Write [YAU]
+    If fstat : Rollback : Else : Commit : Endif
+
+End
+
+#End

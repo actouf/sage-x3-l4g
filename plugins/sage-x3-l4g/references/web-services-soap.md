@@ -1,8 +1,8 @@
-# SOAP web services — publishing and consuming
+# SOAP web services — publishing from X3
 
 Classic SOAP / AWS (`GESAWS`) is still fully supported in V12 and remains the most common integration surface in production X3 shops — metadata-driven, stable across versions, supports complex parameter types better than REST, and partners with deployed SOAP clients rarely want to switch.
 
-For the REST side, REST → JSON consumption, and the protocol comparison, see `web-services-rest.md`. For cross-cutting integration concerns (file exchange, TLS, integration logging), see `web-services-integration.md`.
+This file covers the **server side** (publishing a SOAP service from X3). For calling an external SOAP service from L4G, see `web-services-soap-client.md`. For the REST side, REST → JSON consumption, and the protocol comparison, see `web-services-rest.md`. For cross-cutting integration concerns (file exchange, TLS, integration logging), see `web-services-integration.md`.
 
 ## Publishing a SOAP web service (classic)
 
@@ -210,129 +210,14 @@ Migrate to REST for:
 
 Migration pattern: wrap the existing SOAP `Subprog` in a V12 class, expose the class as a REST service (see `web-services-rest.md`), and run both in parallel for a deprecation window. Clients migrate at their own pace.
 
-## SOAP client — calling an external SOAP service
-
-When an external partner only exposes SOAP, build the envelope, POST it, parse the response.
-
-### Minimal pattern
-
-```l4g
-Local Char ENVELOPE(4000), RESP(10000)
-Local Integer HTTPCODE
-
-ENVELOPE = '<?xml version="1.0" encoding="UTF-8"?>' +
-           '<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">' +
-           '  <soap:Body>' +
-           '    <GetStock xmlns="http://partner.example/">' +
-           '      <ITM>' - [L]ITMREF - '</ITM>' +
-           '    </GetStock>' +
-           '  </soap:Body>' +
-           '</soap:Envelope>'
-
-Call HTTPPOST("https://partner/soap", ENVELOPE, "text/xml; charset=utf-8", RESP, HTTPCODE) From YHTTP
-```
-
-Mandatory HTTP headers the partner usually expects:
-
-- `Content-Type: text/xml; charset=utf-8`
-- `SOAPAction: "<namespace>/<operation>"` — some servers reject the call without it
-
-### With WS-Security UsernameToken
-
-When the partner requires authenticated SOAP:
-
-```l4g
-Local Char SEC(1000)
-SEC = '<soap:Header>' +
-      '  <wsse:Security xmlns:wsse="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd">' +
-      '    <wsse:UsernameToken>' +
-      '      <wsse:Username>' - [L]USR - '</wsse:Username>' +
-      '      <wsse:Password Type="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-username-token-profile-1.0#PasswordText">' -
-              [L]PWD - '</wsse:Password>' +
-      '    </wsse:UsernameToken>' +
-      '  </wsse:Security>' +
-      '</soap:Header>'
-
-ENVELOPE = '<?xml version="1.0" encoding="UTF-8"?>' +
-           '<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">' +
-           SEC +
-           '  <soap:Body>...</soap:Body>' +
-           '</soap:Envelope>'
-```
-
-Never hardcode credentials — pull from `GESADP` parameters or an encrypted config (`security-permissions.md`).
-
-### Escaping XML payload
-
-Values interpolated into XML must be escaped — `&` → `&amp;`, `<` → `&lt;`, `>` → `&gt;`, `"` → `&quot;`, `'` → `&apos;`. Helper:
-
-```l4g
-Funprog YXML_ESC(S)
-Value Char S()
-    S = replace$(S, "&", "&amp;")
-    S = replace$(S, "<", "&lt;")
-    S = replace$(S, ">", "&gt;")
-    S = replace$(S, chr$(34), "&quot;")
-    S = replace$(S, chr$(39), "&apos;")
-End S
-```
-
-Forget this once and a customer name with `&` breaks the whole envelope. Every `<FLD>` interpolation goes through `YXML_ESC` — not optional.
-
-### Parsing the response
-
-**Option 1 — pattern extraction** for small payloads:
-
-```l4g
-Local Integer P1, P2
-Local Char    QTY_STR(20)
-
-P1 = instr(1, RESP, "<Quantity>")
-P2 = instr(1, RESP, "</Quantity>")
-If P1 > 0 And P2 > P1
-    QTY_STR = mid$(RESP, P1 + len$("<Quantity>"), P2 - P1 - len$("<Quantity>"))
-    [L]QTY = val(QTY_STR)
-Endif
-```
-
-Brittle but simple — acceptable when the response has 2-3 fields you need.
-
-**Option 2 — XML helper** when available:
-
-```l4g
-Local Char VAL(100)
-VAL = func AFNC.XMLGET(RESP, "//Quantity")
-[L]QTY = val(VAL)
-```
-
-`AFNC.XML*` presence depends on the patch level — see `version-caveats.md`.
-
-**Option 3 — dedicated class** when parsing is non-trivial. Build a `YXMLPARSER` class once, reuse across services.
-
-### SOAP fault handling
-
-Server-side errors come back as `<soap:Fault>`. Detect and surface:
-
-```l4g
-If instr(1, RESP, "<soap:Fault>") > 0 Or instr(1, RESP, "<SOAP-ENV:Fault>") > 0
-    Local Char REASON(500)
-    REASON = mid$(RESP, instr(1, RESP, "<faultstring>") + len$("<faultstring>"),
-                        instr(1, RESP, "</faultstring>") - instr(1, RESP, "<faultstring>") - len$("<faultstring>"))
-    Call ECRAN_TRACE("SOAP fault: " - REASON, 2) From GESECRAN
-    End 1
-Endif
-```
-
-Don't confuse an HTTP 200 carrying a `<soap:Fault>` with success — SOAP faults travel in 200 or 500 responses depending on the stack.
-
-## SOAP-specific gotchas
+## SOAP server — gotchas
 
 - **SOAP parameter order** — ranks in `GESAWE` must match the `Subprog` signature exactly. A swap compiles fine but deserializes garbage.
 - **SOAP pool restart** — changing activity codes, user ACL, or the underlying subprogram requires a pool restart. Cached sessions keep stale context otherwise.
 - **WSDL caching on the client side** — clients that cache the WSDL at build time don't pick up your changes until rebuilt. Version the service (`_V2`) before changing signatures.
-- **XML unescaped interpolation** — a single `&` or `<` in a customer name breaks the envelope. Route every interpolation through an escape helper.
-- **SOAP fault vs HTTP 200** — a fault can travel in a 200 response body. Check for `<soap:Fault>` explicitly, don't rely on the HTTP code alone.
 - **`callContext.codeUser` impersonation** — legacy configs accept a user code in the body that overrides auth. Disable in production.
 - **SOAP and transactions** — a SOAP subprogram runs in its own session with no pre-existing transaction; don't assume `adxlog` semantics from a batch context.
 
-See also: `web-services-integration.md` (overview, file exchange, TLS), `web-services-rest.md` (REST publishing and SOAP→REST migration target), `security-permissions.md` (ACL, credential storage), `debugging-traces.md` (integration logging), `version-caveats.md` (`HTTPPOST` / `AFNC.XML*` availability).
+For client-side gotchas (XML escaping, SOAP fault vs HTTP 200, encoding) and the full client wrapper class pattern, see `web-services-soap-client.md`.
+
+See also: `web-services-soap-client.md` (calling external SOAP services), `web-services-integration.md` (overview, file exchange, TLS), `web-services-rest.md` (REST publishing and SOAP→REST migration target), `security-permissions.md` (ACL, credential storage), `debugging-traces.md` (integration logging), `version-caveats.md` (`HTTPPOST` / `AFNC.XML*` availability).
