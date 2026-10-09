@@ -1,0 +1,66 @@
+name: Release
+
+# Creates the GitHub Release for a pushed vX.Y.Z tag, with the matching CHANGELOG
+# section as notes and the claude.ai upload zip as asset. Also back-fills a release
+# for every older CHANGELOG version whose tag exists but has no release yet.
+
+on:
+  push:
+    tags: ['v[0-9]+.[0-9]+.[0-9]+']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing tag to (re)publish, e.g. v1.0.0
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TAG: ${{ inputs.tag || github.ref_name }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+          fetch-depth: 0
+
+      - name: Validate (tag must match plugin.json version)
+        run: GITHUB_REF_TYPE=tag GITHUB_REF_NAME="$TAG" bash scripts/validate.sh
+
+      - name: Extract release notes
+        run: |
+          scripts/release-notes.sh "$TAG" > notes.md
+          test -s notes.md || { echo "No CHANGELOG section for $TAG"; exit 1; }
+
+      - name: Build claude.ai upload zip
+        run: |
+          mkdir -p dist
+          cd plugins
+          zip -qr ../dist/sage-x3-l4g.zip sage-x3-l4g \
+            -x 'sage-x3-l4g/.claude-plugin/*' 'sage-x3-l4g/evals/*'
+
+      - name: Publish release
+        run: |
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release edit "$TAG" --title "sage-x3-l4g $TAG" --notes-file notes.md --latest
+            gh release upload "$TAG" dist/sage-x3-l4g.zip --clobber
+          else
+            gh release create "$TAG" dist/sage-x3-l4g.zip --verify-tag \
+              --title "sage-x3-l4g $TAG" --notes-file notes.md --latest
+          fi
+
+      - name: Back-fill releases for older tagged versions
+        run: |
+          for V in $(grep -oE '^## \[[0-9]+\.[0-9]+\.[0-9]+\]' CHANGELOG.md | tr -d '#[] '); do
+            T="v$V"
+            [[ "$T" == "$TAG" ]] && continue
+            git rev-parse -q --verify "refs/tags/$T" >/dev/null || continue
+            gh release view "$T" >/dev/null 2>&1 && continue
+            scripts/release-notes.sh "$V" > "notes-$V.md"
+            gh release create "$T" --verify-tag --title "sage-x3-l4g $T" \
+              --notes-file "notes-$V.md" --latest=false
+          done

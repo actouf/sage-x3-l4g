@@ -23,3 +23,6 @@ dist/
 # Evals / scratch
 evals-workspace/
 *-workspace/
+
+# Plugin eval results
+plugins/sage-x3-l4g/evals/results/

@@ -22,6 +22,9 @@ exclude:
   - .gitignore
   - .gitattributes
   - .claude-plugin/
+  - plugins/sage-x3-l4g/.claude-plugin/
+  - plugins/sage-x3-l4g/evals/
+  - dist/
   - scripts/
   - CONTRIBUTING.md
   - CLAUDE.md

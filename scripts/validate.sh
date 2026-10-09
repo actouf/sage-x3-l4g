@@ -7,88 +7,185 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
+export LC_ALL=C.UTF-8
+
 ERRORS=0
 fail() { echo "  ✗ $*"; ERRORS=$((ERRORS + 1)); }
 ok()   { echo "  ✓ $*"; }
+warn() { echo "  ! $*"; }
 
-echo "→ Checking marketplace.json"
-if ! jq empty .claude-plugin/marketplace.json 2>/dev/null; then
+PLUGIN="plugins/sage-x3-l4g"
+SKILL="$PLUGIN/SKILL.md"
+REFDIR="$PLUGIN/references"
+EXDIR="$PLUGIN/examples"
+PJ="$PLUGIN/.claude-plugin/plugin.json"
+MK=".claude-plugin/marketplace.json"
+
+echo "→ Checking manifests"
+if ! jq empty "$MK" 2>/dev/null; then
   fail "marketplace.json is not valid JSON"
 else
-  ok "JSON is valid"
-
-  NAME=$(jq -r '.owner.name' .claude-plugin/marketplace.json)
-  if [[ "$NAME" == *REPLACE* ]]; then
-    fail "marketplace.json owner.name still contains a placeholder"
+  ok "marketplace.json is valid JSON"
+  for FIELD in .owner.name .owner.url; do
+    VAL=$(jq -r "$FIELD" "$MK")
+    if [[ "$VAL" == *REPLACE* || "$VAL" == "null" ]]; then
+      fail "marketplace.json $FIELD is missing or a placeholder"
+    fi
+  done
+  if [[ -n "$(jq -r '.plugins[] | select(.name=="sage-x3-l4g") | .version // empty' "$MK")" ]]; then
+    fail "marketplace.json must not set a version (plugin.json is the single source)"
   else
-    ok "owner.name = $NAME"
+    ok "marketplace entry has no version"
   fi
+fi
 
-  URL=$(jq -r '.owner.url' .claude-plugin/marketplace.json)
-  if [[ "$URL" == *REPLACE* ]]; then
-    fail "marketplace.json owner.url still contains a placeholder"
-  else
-    ok "owner.url  = $URL"
+VER=""
+if ! jq empty "$PJ" 2>/dev/null; then
+  fail "plugin.json missing or not valid JSON"
+else
+  [[ "$(jq -r .name "$PJ")" == "sage-x3-l4g" ]] && ok "plugin.json name = sage-x3-l4g" || fail "plugin.json name must be sage-x3-l4g"
+  VER=$(jq -r '.version // empty' "$PJ")
+  if [[ "$VER" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then ok "plugin.json version = $VER"; else fail "plugin.json version is not SemVer: '$VER'"; fi
+fi
+
+echo
+echo "→ Checking version sync"
+if [[ -n "$VER" ]]; then
+  CLV=$(grep -m1 -oE '^## \[[0-9]+\.[0-9]+\.[0-9]+\]' CHANGELOG.md | tr -d '#[] ' || true)
+  [[ "$CLV" == "$VER" ]] && ok "CHANGELOG top entry = $VER" || fail "CHANGELOG top entry ($CLV) != plugin.json ($VER)"
+  grep -qE "^\[$VER\]: " CHANGELOG.md && ok "CHANGELOG link for $VER present" || fail "CHANGELOG has no [$VER]: link"
+  if [[ "${GITHUB_REF_TYPE:-}" == "tag" ]]; then
+    [[ "${GITHUB_REF_NAME#v}" == "$VER" ]] && ok "tag ${GITHUB_REF_NAME} matches" || fail "tag ${GITHUB_REF_NAME} != v$VER"
   fi
 fi
 
 echo
 echo "→ Checking SKILL.md frontmatter"
-SKILL="plugins/sage-x3-l4g/SKILL.md"
 if [[ ! -f "$SKILL" ]]; then
   fail "$SKILL not found"
 else
-  # Frontmatter must start at line 1 with --- and contain name + description
   FM=$(awk 'NR==1 && /^---$/ {flag=1; next} /^---$/ && flag {exit} flag' "$SKILL")
   if [[ -z "$FM" ]]; then
     fail "SKILL.md has no YAML frontmatter"
   else
-    if echo "$FM" | grep -q '^name:'; then ok "name: present"; else fail "frontmatter missing name"; fi
-    if echo "$FM" | grep -q '^description:'; then ok "description: present"; else fail "frontmatter missing description"; fi
+    NAME=$(echo "$FM" | sed -n 's/^name:[[:space:]]*//p')
+    if [[ "$NAME" =~ ^[a-z0-9]+(-[a-z0-9]+)*$ && ${#NAME} -le 64 && "$NAME" != *anthropic* && "$NAME" != *claude* ]]; then
+      ok "name: $NAME"
+    else
+      fail "name '$NAME' must be lowercase-hyphenated, ≤ 64 chars, without 'anthropic'/'claude'"
+    fi
+    [[ "$NAME" == "$(basename "$PLUGIN")" ]] || fail "name '$NAME' must match folder '$(basename "$PLUGIN")'"
+
+    DESC=$(echo "$FM" | sed -n 's/^description:[[:space:]]*//p')
+    DLEN=$(printf '%s' "$DESC" | wc -m | tr -d ' ')
+    if [[ -z "$DESC" ]]; then
+      fail "frontmatter missing description"
+    elif [[ "$DLEN" -gt 1024 ]]; then
+      fail "description is $DLEN chars (max 1024)"
+    else
+      ok "description: $DLEN chars (≤ 1024)"
+    fi
+    [[ "$DESC" == *"<"* || "$DESC" == *">"* ]] && fail "description must not contain < or >"
+
+    BAD_KEYS=$(echo "$FM" | grep -oE '^[A-Za-z_-]+:' | tr -d ':' | grep -vxE 'name|description|license|compatibility|metadata|allowed-tools' || true)
+    [[ -n "$BAD_KEYS" ]] && fail "frontmatter keys not accepted by claude.ai: $BAD_KEYS" || ok "frontmatter keys are portable"
   fi
+  BODY=$(awk 'NR==1 && /^---$/ {fm=1; next} fm && /^---$/ {fm=0; next} !fm' "$SKILL" | wc -l | tr -d ' ')
+  [[ "$BODY" -lt 500 ]] && ok "SKILL.md body: $BODY lines (< 500)" || fail "SKILL.md body is $BODY lines (must be < 500)"
 fi
 
 echo
-echo "→ Checking reference cross-links"
-REFDIR="plugins/sage-x3-l4g/references"
+echo "→ Checking references"
 if [[ ! -d "$REFDIR" ]]; then
   fail "references/ directory missing"
 else
-  # Extract references of the form `foo.md` or `references/foo.md` from all markdown files
-  # and confirm each target exists.
-  MISSING=0
-  while IFS= read -r line; do
-    # Parse filename from the match
-    TARGET=$(echo "$line" | sed -E 's/.*`([a-zA-Z0-9_-]+\.md)`.*/\1/')
-    # Skip if the regex didn't extract a clean filename
-    if [[ ! "$TARGET" =~ ^[a-zA-Z0-9_-]+\.md$ ]]; then
-      continue
-    fi
-    # Skip top-level docs we know are siblings (README, CHANGELOG, etc.)
-    case "$TARGET" in
-      README.md|CHANGELOG.md|CONTRIBUTING.md|CLAUDE.md|LICENSE|README_FR.md) continue ;;
-    esac
-    # Check the file is somewhere under plugins/ or tests/ or examples/
-    if ! find plugins tests examples -name "$TARGET" 2>/dev/null | grep -q .; then
-      fail "reference not found: $TARGET"
-      MISSING=$((MISSING + 1))
-    fi
-  done < <(grep -rhoE '`[a-zA-Z0-9_/-]+\.md`' plugins/ 2>/dev/null | sort -u)
-
-  if [[ $MISSING -eq 0 ]]; then
-    ok "all referenced files resolve"
-  fi
+  for F in "$REFDIR"/*.md; do
+    B=$(basename "$F")
+    N=$(wc -l < "$F" | tr -d ' ')
+    [[ "$N" -gt 340 ]] && fail "$B: $N lines (max 340 — split it)"
+    [[ "$N" -gt 300 && "$N" -le 340 ]] && warn "$B: $N lines (target ≤ 300)"
+    if [[ "$N" -gt 100 ]] && ! grep -q '^## Contents' "$F"; then fail "$B: > 100 lines without '## Contents'"; fi
+    grep -q '^## Sources' "$F" || fail "$B: missing '## Sources' section"
+    grep -q "references/$B" "$SKILL" || fail "$B: not listed in SKILL.md"
+    for DOC in README.md README_FR.md index.md; do
+      grep -q "$B" "$DOC" || fail "$B: not listed in $DOC"
+    done
+  done
+  ok "$(ls "$REFDIR"/*.md | wc -l | tr -d ' ') reference file(s) checked"
 fi
 
 echo
-echo "→ Checking examples"
-if [[ -d "examples" ]]; then
-  COUNT=$(find examples -maxdepth 1 \( -name "*.src" -o -name "*.trt" \) | wc -l | tr -d ' ')
-  if [[ "$COUNT" -lt 1 ]]; then
-    fail "examples/ has no .src or .trt files"
-  else
-    ok "$COUNT example file(s) found"
+echo "→ Checking cross-links"
+MISSING=0
+while IFS= read -r TARGET; do
+  TARGET=${TARGET//\`/}
+  B=$(basename "$TARGET")
+  case "$B" in README.md|CHANGELOG.md|CONTRIBUTING.md|CLAUDE.md|README_FR.md|SKILL.md) continue ;; esac
+  if ! find "$PLUGIN" -name "$B" | grep -q .; then
+    fail "backticked reference not found: $TARGET"
+    MISSING=$((MISSING + 1))
   fi
+done < <(grep -rhoE '`([a-zA-Z0-9_.-]+\.md|examples/[a-zA-Z0-9_.-]+\.(src|trt))`' "$PLUGIN" | sort -u)
+while IFS= read -r LINK; do
+  [[ -e "$LINK" ]] || { fail "index/README link not found: $LINK"; MISSING=$((MISSING + 1)); }
+done < <(grep -hoE '\]\([^)#:]+\)' index.md README.md README_FR.md | sed -E 's/^\]\(//; s/\)$//' | sort -u)
+[[ $MISSING -eq 0 ]] && ok "all referenced files resolve"
+
+echo
+echo "→ Checking examples"
+COUNT=$( (find "$EXDIR" -maxdepth 1 \( -name "*.src" -o -name "*.trt" \) 2>/dev/null || true) | wc -l | tr -d ' ')
+[[ "$COUNT" -ge 1 ]] && ok "$COUNT example file(s) in $EXDIR" || fail "$EXDIR has no .src or .trt files"
+
+echo
+echo "→ Checking L4G code (deny-list of non-existent keywords / APIs, indentation)"
+# Emit "file:line:code" for every line of ```l4g blocks in references and every line of examples,
+# with comments stripped, then grep for tokens that do not exist in X3 4GL.
+extract_code() {
+  awk '
+    FNR==1 { inblk = (FILENAME ~ /\.(src|trt)$/) }
+    FILENAME ~ /\.md$/ && /^```l4g/ { inblk=1; next }
+    FILENAME ~ /\.md$/ && /^```/    { inblk=0; next }
+    inblk {
+      line=$0
+      if (line ~ /^[ \t]*#/) next
+      sub(/:[ \t]*#.*$/, "", line)
+      print FILENAME ":" FNR ":" line
+    }' "$REFDIR"/*.md "$EXDIR"/*.src "$EXDIR"/*.trt 2>/dev/null
+}
+CODE=$(extract_code || true)
+DENY=(
+  '\bReadseq\b' '\bWriteseq\b' '\bExitfor\b' '\bContinue\b' '\bIncr\b' '\bEndclass\b'
+  ':[[:space:]]*(Public|Private)[[:space:]]' 'ECRAN_TRACE' '\bENVMAIL' 'AFNC\.JSONGET'
+  '\breplace\$' '\blen\$' '\bstrip\$' '\bupper\$' '\blower\$'
+  '\bIf[[:space:]]+(\[S\])?adxlog[[:space:]]*($|:)' ':[[:space:]]*For\b.*\bOrder[[:space:]]+By\b'
+)
+DENY_HITS=0
+for PAT in "${DENY[@]}"; do
+  # Match against "file:line:code"; anchor patterns written with ':' at the code start.
+  HITS=$(printf '%s\n' "$CODE" | sed -E 's/^([^:]+:[0-9]+:)[[:space:]]*/\1/' | grep -iE "$PAT" || true)
+  if [[ -n "$HITS" ]]; then
+    fail "forbidden pattern /$PAT/:"
+    printf '%s\n' "$HITS" | head -5 | sed 's/^/      /'
+    DENY_HITS=$((DENY_HITS + 1))
+  fi
+done
+TABS=$(printf '%s\n' "$CODE" | grep -P '\t' || true)
+[[ -n "$TABS" ]] && { fail "tab characters in L4G code:"; printf '%s\n' "$TABS" | head -5 | sed 's/^/      /'; DENY_HITS=$((DENY_HITS + 1)); }
+[[ $DENY_HITS -eq 0 ]] && ok "no forbidden keywords / APIs in L4G code"
+
+# House style: the first indentation level in each code block / example must be 2 spaces.
+BAD_INDENT=$(awk '
+  function flush() { if (blk != "" && minind > 0 && minind != 2) print blk " (first indent = " minind " spaces)"; blk=""; minind=0 }
+  FNR==1 { flush(); if (FILENAME ~ /\.(src|trt)$/) { blk=FILENAME; inblk=1 } else inblk=0 }
+  FILENAME ~ /\.md$/ && /^```l4g/ { flush(); blk=FILENAME ":" FNR; inblk=1; next }
+  FILENAME ~ /\.md$/ && /^```/    { if (inblk) flush(); inblk=0; next }
+  inblk && /^ +[^ &]/ { match($0, /^ +/); if (minind == 0 || RLENGTH < minind) minind = RLENGTH }
+  END { flush() }' "$REFDIR"/*.md "$EXDIR"/*.src "$EXDIR"/*.trt 2>/dev/null || true)
+if [[ -n "$BAD_INDENT" ]]; then
+  fail "L4G blocks not using 2-space indentation:"
+  printf '%s\n' "$BAD_INDENT" | head -10 | sed 's/^/      /'
+else
+  ok "L4G blocks use 2-space indentation"
 fi
 
 echo

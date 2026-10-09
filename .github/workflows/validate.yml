@@ -2,18 +2,25 @@ name: Validate skill
 
 on:
   push:
-    branches: [master, main]
+    branches: [master]
   pull_request:
-    branches: [master, main]
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   validate:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Install jq
-        run: sudo apt-get update && sudo apt-get install -y jq
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Run validation script
         run: bash scripts/validate.sh
+
+      - name: Validate manifests with Claude Code
+        run: |
+          npm install -g @anthropic-ai/claude-code@2.1.280
+          claude plugin validate . --strict
+          claude plugin validate plugins/sage-x3-l4g --strict
