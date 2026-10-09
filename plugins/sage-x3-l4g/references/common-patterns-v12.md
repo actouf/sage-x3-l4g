@@ -1,236 +1,258 @@
-# Common L4G patterns — V12 idioms
+# Common L4G patterns — V12 recipes
 
-Recipes that lean on the V12 stack: classes, representations, REST services, IMP/EXP templates, scheduled batches with notification.
+Short recipes for V7+/V12 code: property rules, control events, methods, using a class instance
+from any script, calling a REST API, running a silent import, sending a mail and logging a
+batch-callable routine with `ALOG`. The class snippets come from `examples/YCONTRACT_CSPE.src`
+(persistent class `YCONTRACT` on table `YCONTRACT [YCT]`, properties `YCTNUM`, `BPCNUM`, `YSTRDAT`,
+`YENDDAT`, `YAMOUNT`, `YSTATUS` with 1 Draft / 2 Active / 3 Closed). Classic and core recipes are in
+`common-patterns.md`; the class model itself is in `v12-classes.md`.
 
-For the core / Classic recipes (transactions, sequential file, error handling, action-on-field, calling standard functions, debug traces, embedded SQL, sub-prog parameter passing, batch processing) see `common-patterns.md`.
+## Contents
+- [CONTROL rule on a property](#control-rule-on-a-property)
+- [Defaults and cross-property checks at insert](#defaults-and-cross-property-checks-at-insert)
+- [Method returning ARET_VALUE](#method-returning-aret_value)
+- [Read and update an entity from code](#read-and-update-an-entity-from-code)
+- [Call an external REST API](#call-an-external-rest-api)
+- [Silent import from code](#silent-import-from-code)
+- [Send an e-mail](#send-an-e-mail)
+- [ALOG log in a batch-callable subprogram](#alog-log-in-a-batch-callable-subprogram)
+- [Stock and standard documents](#stock-and-standard-documents)
+- [Gotchas](#gotchas)
+- [Sources](#sources)
 
-## 1. V12 class with CRUD — wrapping a custom table
-
-```l4g
-##############################################################
-# YCUSTLOG — class wrapping the YCUSTLOG table
-##############################################################
-Class YCUSTLOG
-
-    Public Char    CODE(20)
-    Public Char    LABEL(60)
-    Public Decimal AMT
-    Public Integer UPDTICK
-
-    Public Method Load(CODE_IN)
-    Value Char CODE_IN()
-        Local File YCUSTLOG [YCL]
-        Read [YCL]CODE0 = CODE_IN
-        If fstat
-            End 1
-        Endif
-        this.CODE    = [F:YCL]CODE
-        this.LABEL   = [F:YCL]LABEL
-        this.AMT     = [F:YCL]AMT
-        this.UPDTICK = [F:YCL]UPDTICK
-    End 0
-
-    Public Method Save()
-        # Optimistic update using UPDTICK
-        Update YCUSTLOG Where CODE = this.CODE And UPDTICK = this.UPDTICK
-            With LABEL = this.LABEL, AMT = this.AMT, UPDTICK = UPDTICK + 1
-        If [S]adxuprec = 0
-            End 1                          # changed by someone else
-        Endif
-        this.UPDTICK += 1
-    End 0
-
-Endclass
-```
-
-Call site:
+## CONTROL rule on a property
 
 ```l4g
-Local YCUSTLOG R
-If R.Load("LOG001") = 0
-    R.AMT = R.AMT + 100
-    If R.Save() <> 0
-        Errbox "Record changed, please refresh."
-    Endif
-Endif
-```
+$PROPERTIES
+  Case [L]CURPRO
+    When "YAMOUNT" : Gosub Y_PROP_YAMOUNT
+  Endcase
+Return
 
-See `v12-classes-representations.md` for representation wiring and `database.md` for `UPDTICK` semantics.
-
-## 2. V12 REST service — transactional business operation
-
-```l4g
-##############################################################
-# YSRV_RESERVE — POST /api/x3/erp/SEED/YSRV_RESERVE
-# Reserves stock for an item; returns remaining quantity.
-##############################################################
-Class YSRV_RESERVE
-
-    Public Char    ITMREF(30)
-    Public Decimal QTY
-    Public Decimal REMAINING                # out
-    Public Char    STATUS(30)               # out
-
-    Public Method Execute()
-        Local File ITMMASTER [ITM], STOCK [STO]
-        Local Integer IF_TRANS
-        Local Decimal AVAIL
-
-        Read [ITM]ITMREF0 = this.ITMREF
-        If fstat
-            this.STATUS = "UNKNOWN_ITEM"
-            End 1
-        Endif
-
-        # Sum available stock
-        AVAIL = 0
-        For [STO] Where ITMREF = this.ITMREF
-            AVAIL += [F:STO]QTYSTU
-        Next
-
-        If AVAIL < this.QTY
-            this.REMAINING = AVAIL
-            this.STATUS = "INSUFFICIENT"
-            End 1
-        Endif
-
-        If adxlog
-            Trbegin [STO]
-            IF_TRANS = 0
-        Else
-            IF_TRANS = 1
-        Endif
-
-        Update STOCK Where ITMREF = this.ITMREF With QTYSTU = QTYSTU - this.QTY Top 1
-        If fstat Or [S]adxuprec = 0
-            If IF_TRANS = 0 : Rollback : Endif
-            this.STATUS = "WRITE_FAILED"
-            End 1
-        Endif
-
-        If IF_TRANS = 0 : Commit : Endif
-        this.REMAINING = AVAIL - this.QTY
-        this.STATUS = "OK"
-    End 0
-
-Endclass
-```
-
-Published as a service representation; callers POST JSON. See `web-services-rest.md`.
-
-## 3. Consume an external REST API
-
-```l4g
-##############################################################
-# YFETCH_RATE — get the EUR/USD rate from an external API
-##############################################################
-Funprog YFETCH_RATE(CUR)
-Value Char CUR()
-
-Local Char    URL(500), RESP(4000), BODY(200)
-Local Integer HTTPCODE
-Local Decimal RATE
-
-URL = "https://api.exchangerate.example/latest?base=EUR&symbols=" - CUR
-BODY = ""
-
-Call HTTPGET(URL, RESP, HTTPCODE) From YHTTP
-
-If HTTPCODE <> 200
-    Call ECRAN_TRACE("HTTP " + num$(HTTPCODE), 2) From GESECRAN
-    End 0
-Endif
-
-# Parse a simple {"rates":{"USD":1.08}} payload
-RATE = val(func AFNC.JSONGET(RESP, "rates." - CUR))
-End RATE
-```
-
-Caller:
-
-```l4g
-Local Decimal R
-R = func YEXCHANGE.YFETCH_RATE("USD")
-If R > 0
-    Infbox "1 EUR = " + num$(R) + " USD"
-Endif
-```
-
-See `web-services-rest.md` for OAuth, retry, and pagination patterns.
-
-## 4. Import with custom validation via template hook
-
-```l4g
-##############################################################
-# YIMP_CUST_CTRL — validation hook on import template YIMPCUS
-# Declared in GESAOI as the CTRL call for each line
-##############################################################
-Subprog YIMP_CUST_CTRL()
-    # The template has already populated [M:BPC] from the file
-
-    # 1. Mandatory SIREN for French customers
-    If [M:BPC]CRY = "FR" And [M:BPC]BPCCRN = ""
-        [V]GOK = 0
-        Call ECRAN_TRACE("SIREN obligatoire pour FR: " - [M:BPC]BPCNUM, 2) From GESECRAN
-        End
-    Endif
-
-    # 2. Deduplicate against existing
-    Local File BPCUSTOMER [BPX]
-    Read [BPX]BPCNUM0 = [M:BPC]BPCNUM
-    If !fstat
-        # Already exists: let the template update it, but log
-        Call ECRAN_TRACE("MAJ: " - [M:BPC]BPCNUM, 0) From GESECRAN
-    Endif
-
-    # 3. Set a default currency if missing
-    If [M:BPC]CUR = ""
-        [M:BPC]CUR = "EUR"
-    Endif
-End
-```
-
-Trigger the import:
-
-```l4g
-Call LECFIC("YIMPCUS", "TMP/customers.csv", "", "") From IMPOBJ
-```
-
-See `imports-exports.md` for template declaration details.
-
-## 5. Scheduled batch with email summary
-
-```l4g
-##############################################################
-# YBATCH_ORPHAN_ORDERS — daily, emails list of orders with no customer
-##############################################################
-$MAIN
-Local File SORDER [SOH], BPCUSTOMER [BPC]
-Local Char BODY(8000), SUBJECT(100)
-Local Integer N
-N = 0
-BODY = "Commandes orphelines au " - num$(date$, "J/M/A") - ":" + chr$(13) + chr$(10)
-
-For [SOH] Where SOHSTA <= 2 Order By Key SOHNUM0
-    Link [BPC] With [F:SOH]BPCORD = [F:BPC]BPCNUM0
-    If fstat                                 # customer missing
-        Incr N
-        BODY = BODY - [F:SOH]SOHNUM - "  (" - [F:SOH]BPCORD - ")" + chr$(13) + chr$(10)
-    Endif
-Next
-
-If N = 0 : Return : Endif                    # nothing to report
-
-BODY = BODY + chr$(13) + chr$(10) + num$(N) + " total"
-SUBJECT = "[X3] " + num$(N) + " commandes orphelines"
-
-Call ENVMAIL("ops@example.com", "", "", SUBJECT, BODY, "", "") From AMAIL
-If [S]stat1
-    Call ECRAN_TRACE("Email failed stat1=" + num$([S]stat1), 2) From GESECRAN
-Endif
+$Y_PROP_YAMOUNT
+  Case [L]ARULE
+    When "CONTROL"
+      If this.YAMOUNT < 0
+        [L]ASTATUS = fmet this.ASETERROR("YAMOUNT", mess(21, 160, 1), [V]CST_AERROR)
+      Endif
+  Endcase
 Return
 ```
 
-Schedule with `GESABA` / `GESAPL`. See `workflow-email.md` for the `ENVMAIL` signature, `debugging-traces.md` for the retry-monitoring pattern, and `performance.md` for batch scheduling guidance.
+CONTROL runs on every assignment (except in `AREAD_AFTER`) and again before insert/update; it may
+only check and call `ASETERROR`, never assign properties (that is PROPAGATE). `this.snapshot.YAMOUNT`
+holds the value at operation start. Always assign `[L]ASTATUS`: the supervisor tests it.
 
-See also: `common-patterns.md` (core / Classic recipes), `v12-classes-representations.md` (class and representation idioms), `web-services-rest.md` and `web-services-soap.md` (publishing services), `imports-exports.md` (templates and hooks), `workflow-email.md` (email and workflow rules).
+## Defaults and cross-property checks at insert
+
+Sage describes `AINSERT_CONTROL_BEFORE` as the place to "assign default values" (before the property
+controls) and the `*_CONTROL_AFTER` events as running after all controls, before the database write —
+the place for checks that involve several properties. Neither runs in a transaction.
+
+```l4g
+$EVENTS
+  Case [L]CURPTH
+    When ""
+      Case [L]AEVENT
+        When "AINSERT_CONTROL_BEFORE" : Gosub Y_INS_DEFAULTS
+        When "AINSERT_CONTROL_AFTER"  : Gosub Y_CHECK_DATES
+        When "AUPDATE_CONTROL_AFTER"  : Gosub Y_CHECK_DATES
+      Endcase
+  Endcase
+Return
+
+$Y_INS_DEFAULTS
+  If this.YSTATUS = 0 : this.YSTATUS = 1 : Endif
+  If this.YSTRDAT = [0/0/0] : this.YSTRDAT = date$ : Endif
+Return
+
+$Y_CHECK_DATES
+  If this.YENDDAT <> [0/0/0] and this.YENDDAT < this.YSTRDAT
+    [L]ASTATUS = fmet this.ASETERROR("YENDDAT", mess(22, 160, 1), [V]CST_AERROR)
+  Endif
+Return
+```
+
+An `ASTATUS` of `[V]CST_AERROR` or more returned by a control event cancels the operation. No
+database update and no `Trbegin` in these events (`v12-classes.md`).
+
+## Method returning ARET_VALUE
+
+Declare the method in the class Methods tab (code `YCLOSE`, return type Integer), validate, then:
+
+```l4g
+$METHODS
+  Case [L]AMETHOD
+    When "YCLOSE" : Gosub Y_CLOSE
+  Endcase
+Return
+
+$Y_CLOSE
+  If this.YSTATUS = 3
+    [L]ARET_VALUE = [V]CST_AWARNING           : # already closed
+  Else
+    this.YSTATUS = 3                          : # rules of YSTATUS run here
+    If this.YENDDAT = [0/0/0] or this.YENDDAT > date$ : this.YENDDAT = date$ : Endif
+    [L]ARET_VALUE = [V]CST_AOK
+  Endif
+Return
+```
+
+The method changes the instance only; the caller persists it with `AUPDATE`. `$METHODS` is called
+only in the scripts of the class that defines the method. Stateless work belongs in an operation
+(`$OPERATIONS`, `[L]AOPERATION`).
+
+## Read and update an entity from code
+
+```l4g
+# Script YCTLIB - close one contract from a batch, a web service or a Classic action
+Funprog YCONTRACT_CLOSE(CTNUM)
+Value Char CTNUM()
+Local Instance YCTI Using C_YCONTRACT
+Local Integer  YSTA
+  YCTI = NewInstance C_YCONTRACT AllocGroup Null
+  [L]YSTA = fmet YCTI.AREAD([L]CTNUM)         : # key segments of the class key
+  If [L]YSTA < [V]CST_AERROR
+    [L]YSTA = fmet YCTI.YCLOSE()              : # ARET_VALUE of the method
+  Endif
+  If [L]YSTA = [V]CST_AOK
+    [L]YSTA = fmet YCTI.AUPDATE()             : # controls, events, database update
+  Endif
+  FreeGroup YCTI                              : # always, on every path
+End [L]YSTA
+```
+
+Creation follows the same shape with `fmet YCTI.AINIT()`, property assignments and
+`fmet YCTI.AINSERT()` (`v12-classes.md`). The errors stay on the instance until `FreeGroup`: dump
+them first with `APUTINSTERRS` (last recipe) or `LOG_CLASS` in a test (`unit-testing-axunit.md`).
+
+## Call an external REST API
+
+```l4g
+  [L]HCOD(1) = "Accept"
+  [L]HVAL(1) = '"application/json"'           : # values are JSON constants
+  [L]HTTPSTA = func ASYRRESTCLI.EXEC_REST_WS("YFXRATES", "GET", "/latest?base=EUR&symbols=USD",
+  & [L]PCOD, [L]PVAL, [L]HCOD, [L]HVAL, "{}", 0, "", [L]RESHEAD, [L]RESBODY)
+  If [L]HTTPSTA = 200
+    ParseInstance OBJ With [L]RESBODY         : # Local Instance OBJ Using OBJECT
+    If OBJ.Contains$("/rates/USD") = 0        : # 0 = the path exists
+      [L]RATE = val(OBJ.Select$("$.rates.USD"))
+    Endif
+    FreeGroup OBJ
+  Endif
+```
+
+The service name refers to a Syracuse "Outgoing REST web services" record (base URL, certificates,
+Basic credentials). Retries, logging through `YINTLOG_WRITE` and the declarations:
+`examples/YRESTRATE.src`; long bearer tokens, pagination, runtime availability of the JSON parser:
+`web-services-rest-client.md`, `version-caveats.md`.
+
+## Silent import from code
+
+```l4g
+  # Inside a routine that owns an ALOG instance YLOG (last recipe)
+  [L]STA = func YIMPLAUNCH.YIMP_FILE("YCU", "ycust0001", [L]MSG)
+  If [L]STA <> [V]CST_AOK
+    [L]LOGST = fmet YLOG.APUTLINE("Import YCU:" - [L]MSG, [V]CST_AERROR)
+  Endif
+```
+
+`YIMP_FILE` (`examples/YIMPLAUNCH.src`) checks the file, runs `Call IMPORTSIL(TEMPLATE, PATH) From
+GIMPOBJ` with the trace handling of Sage's appendix, then renames the file `.done` or `.err`. The
+template runs the object's controls as screen entry would (`imports-exports.md`).
+
+## Send an e-mail
+
+```l4g
+Local Char    YFROM(250), YSUBJECT(250)
+Local Char    YTO(250)(1..), YCC(250)(1..), YATTACH(250)(1..)
+Local Clbfile YBODY(0)
+Local Integer YSTA
+  YFROM    = "erp@example.com"
+  YTO(1)   = "finance@example.com"
+  YSUBJECT = "Contrats clos"
+  Append YBODY, "Bonjour," + chr$(10)
+  Append YBODY, "Le traitement de clôture est terminé." + chr$(10)
+  YSTA = func ASYRMAIL.ASEND_MAIL(GACTX, YFROM, YTO, YCC, YSUBJECT, YBODY, YATTACH, [V]CST_ANO)
+  # [V]CST_AOK sent, [V]CST_AINFO an attachment is missing, [V]CST_AERROR failed
+```
+
+SMTP lives in Syracuse notification servers (parameters SYRMAIL / SYRMAILSRV). HTML content and the
+routing through the notification server are not documented for this API: test before promising them
+(`workflow-email.md`).
+
+## ALOG log in a batch-callable subprogram
+
+```l4g
+# Script YCTBATCH - close the expired active contracts, one class update per contract
+Subprog YCT_CLOSE_EXPIRED(NBOK, NBKO, LOGNAME)
+Variable Integer NBOK, NBKO
+Variable Char    LOGNAME()
+Local File YCONTRACT [YCT]
+Local Instance YLOG Using C_ALOG
+Local Instance YCTI Using C_YCONTRACT
+Local Integer  YSTA, LOGST
+Local Date     TODAY
+  [L]NBOK = 0 : [L]NBKO = 0
+  If adxlog <> 0 : [L]NBKO = -1 : End : Endif  : # each AUPDATE needs its own supervisor transaction
+  [L]TODAY = date$
+  YLOG = NewInstance C_ALOG AllocGroup Null
+  [L]LOGST = fmet YLOG.ABEGINLOG("YCT_CLOSE_EXPIRED")
+  LOGNAME = fmet YLOG.AGETNAME()
+  For [YCT]YCT0 Where YSTATUS = 2 and YENDDAT <> [0/0/0] and YENDDAT < [L]TODAY
+    YCTI = NewInstance C_YCONTRACT AllocGroup Null
+    [L]YSTA = fmet YCTI.AREAD([F:YCT]YCTNUM)
+    If [L]YSTA < [V]CST_AERROR : [L]YSTA = fmet YCTI.YCLOSE() : Endif
+    If [L]YSTA = [V]CST_AOK : [L]YSTA = fmet YCTI.AUPDATE() : Endif
+    If [L]YSTA >= [V]CST_AERROR
+      [L]NBKO += 1
+      [L]LOGST = fmet YLOG.APUTLINE("Contrat" - [F:YCT]YCTNUM - "non clos", [V]CST_AERROR)
+      [L]LOGST = fmet YLOG.APUTINSTERRS(YCTI)  : # the class errors, before FreeGroup
+    Else
+      [L]NBOK += 1
+    Endif
+    FreeGroup YCTI
+  Next
+  [L]LOGST = fmet YLOG.APUTLINE(num$([L]NBOK) - "clos," - num$([L]NBKO) - "en erreur", [V]CST_AINFO)
+  [L]LOGST = fmet YLOG.AENDLOG()
+  FreeGroup YLOG
+End
+```
+
+It refuses to run inside a caller's transaction (`NBKO = -1`): called with no transaction open, each
+`AUPDATE` runs in its own supervisor transaction, so one failing contract does not undo the others.
+To run it as a batch task, call it from the `EXEC` action of a Standard process script, as
+`examples/YTRFPOST.src` does (`batch-scheduling.md`). ALOG methods: `debugging-traces.md`.
+
+## Stock and standard documents
+
+Never `Update` / `Write` standard business tables such as `STOCK`, `SORDER` or `GACCOUNT` from specific
+code: quantities, allocations, statuses and journals are maintained together by the standard
+functions. Create stock movements and documents through the standard functions, their import
+templates or their published web services, and check which one applies to your module and patch
+level. This skill does not document a stock-movement API, and none should be invented.
+
+## Gotchas
+
+- `NewInstance` without `FreeGroup` on every path leaks memory in long batches.
+- `ASETERROR` without `[L]ASTATUS = ...` records a message but does not stop the operation.
+- Use `mess(N, CHAPTER, 1)` for texts (`localization.md`); literals are not translated.
+- `GACTX` / `this.ACTX` give the user, folder and language; do not rely on Classic globals in class
+  code.
+- `Contains$` returns 0 when the path exists.
+- Validate the class after every dictionary change: the generated code is what runs.
+
+See also: `common-patterns.md`, `v12-classes.md`, `v12-representations.md`,
+`web-services-rest-client.md`, `imports-exports.md`, `workflow-email.md`, `debugging-traces.md`.
+
+## Sources
+- https://online-help.sagex3.com/erp/12/en-us/Content/V7DEV/developer-guide_classes-events.html
+- https://online-help.sagex3.com/erp/12/en-us/Content/V7DEV/developer-guide_event-control.html
+- https://online-help.sagex3.com/erp/12/en-us/Content/V7DEV/developer-guide_classes-script.html
+- https://online-help.sagex3.com/erp/12/en-us/Content/V7DEV/developer-guide_error-handling.html
+- https://online-help.sagex3.com/erp/12/en-us/Content/V7DEV/developer-guide_managing-log-files.html
+- https://online-help.sagex3.com/erp/12/en-us/Content/V7DEV/api-guide_api-asyrrestcli.html
+- https://online-help.sagex3.com/erp/12/en-us/Content/V7DEV/4gl_parse-instance.html
+- https://online-help.sagex3.com/erp/12/en-us/Content/V7DEV/api-guide_send-mail.html
+- https://online-help.sagex3.com/erp/12/en-us/Content/FCT/GES_AOE1.htm
+- https://online-help.sagex3.com/erp/12/en-us/Content/FCT/GESACLA.htm

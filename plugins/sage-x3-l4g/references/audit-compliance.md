@@ -1,294 +1,246 @@
-# Audit, compliance, and data retention
+# Audit, compliance and data retention
 
-How to make X3 customisations satisfy regulatory requirements: GDPR (right to access, erasure, portability), SOX-style financial audit trail, retention policies, and the audit-log discipline that supports them.
+What Sage X3 V12 already provides for audit trails, personal-data (GDPR) handling and purging, and how to write
+the specific pieces correctly when the standard does not cover a need: an append-only audit table fed by one
+helper, sequence numbers with `NUMERO`, pseudonymisation and retention batches. Access control itself is in
+`security-permissions.md`; legal retention periods are a question for your legal team, not for code.
 
-For ACL and access control, see `security-permissions.md`. For the technical audit-log table pattern, see also `security-permissions.md` § Audit trail. This file focuses on **what** to log, **how long** to keep it, and the regulator-facing mechanics.
+## Contents
+- [Standard tools first](#standard-tools-first)
+- [Custom audit table YAUDIT](#custom-audit-table-yaudit)
+- [The single audit helper](#the-single-audit-helper)
+- [Sequence numbers with NUMERO](#sequence-numbers-with-numero)
+- [GDPR: where personal data lives](#gdpr-where-personal-data-lives)
+- [GDPR: access and portability](#gdpr-access-and-portability)
+- [GDPR: erasure by pseudonymisation](#gdpr-erasure-by-pseudonymisation)
+- [Retention and purge](#retention-and-purge)
+- [Gotchas](#gotchas)
+- [Sources](#sources)
 
-## The compliance surfaces in X3
+## Standard tools first
 
-| Concern | Where it touches L4G |
-|---------|---------------------|
-| Right to access (GDPR Art. 15) | Export of all personal data for a subject |
-| Right to erasure / "to be forgotten" (Art. 17) | Selective delete or pseudonymisation |
-| Data portability (Art. 20) | Structured export in a machine-readable format |
-| Financial audit trail (SOX, French Code de Commerce, etc.) | Immutable record of every accounting-relevant change |
-| Retention policy | When and how to purge / archive old data |
-| Consent tracking | Who agreed to what, when |
+| Need | Standard feature |
+|---|---|
+| Who changed which field of a table, before/after values | Activity code **AUDIT** + *Audit* tab of the table dictionary (GESATB): generated database triggers write to **AUDITH**/**AUDITL**; inquiry via Usage > Audit > Tables / Fields; workflow rule **UPDFLD** for notifications |
+| Who connected | Usage > Audit > Connections (same activity code) |
+| Trail of operations per user | Parameter **TABTRA** (all operations, or deletions/renamings only; user or global level) |
+| Changes to administrative data (Syracuse) | V12 audit collection in MongoDB |
+| Purge / archive closed data | **AHISTO** (archive/purge), **APARHIS** (purge parameters), **CREHISTO** (create the archive folder) |
+| Inventory of personal data, breach contact lists | "Data protection" functions: check companies for DPO, data protection setup, data protection search, lists of email / phone / personal data exported to CSV (community-reported, menu Usage > GDPR) |
 
-**Not in scope of this file:** raw infrastructure (encryption-at-rest, backup retention, network logging). Those live with the DBA / sysadmin team. L4G's job is the application-layer audit trail and the data-subject-rights workflows.
+Sage warns that TABTRA and the MongoDB audit collection can significantly impact performance: enable them for a
+period or a limited set of users. Table auditing only covers tables configured before the change happened.
 
-## The audit log table — pattern
+## Custom audit table YAUDIT
 
-Every compliance-relevant change writes a row into a dedicated table that:
+Use a specific table only for **business events** the standard trail cannot express: GDPR exports and
+pseudonymisations, integration decisions, overrides of a control, mass updates by a batch.
 
-- Cannot be modified by application code (insert-only)
-- Persists longer than the data it audits
-- Is queryable by user, by entity, by date range
+| Column | Type | Content |
+|---|---|---|
+| `AUDNUM` | Char(20), unique key | Sequence number (`NUMERO`) |
+| `AUDDATE` | Date | `date$` (index for retention and searches) |
+| `AUDDTM` | Datetime | `datetime$` (GMT) |
+| `USR` | Char(10) | `GACTX.USER` |
+| `TBL`, `TBLKEY` | Char(12), Char(60) | Business table and key concerned |
+| `EVT` | Char(20) | `GDPR_EXPORT`, `GDPR_PSEUDO`, `OVERRIDE`, … |
+| `FLD`, `OLDVAL`, `NEWVAL` | Char(30), Char(250), Char(250) | Optional field-level detail |
+| `REASON` | Char(250) | Ticket / justification |
 
-Schema:
+Declare it in GESATB under a specific activity code with keys on (`AUDNUM`), (`TBL`, `TBLKEY`, `AUDDATE`) and
+(`AUDDATE`). Append-only: no class/representation with update or delete, no `Update`/`Delete` in code except the
+retention batch, protect the table and its inquiry with an access code (GESACS), and ask the DBA to restrict direct
+SQL grants. `Char` is limited to 255 characters — use a `Clbfile` column for larger payloads.
+
+## The single audit helper
+
+All code writes through one Funprog. There is only one transaction level in X3: the helper **joins** the
+caller's transaction when there is one (the audit row then commits or rolls back with the business change, which is
+what an auditor expects) and opens its own otherwise. To record a *failed* attempt, call it after the caller's
+`Rollback`.
 
 ```l4g
 ##############################################################
-# YAUDITLOG — append-only audit trail
-# Declared in GESATB. Never expose Update or Delete actions.
+# YAUDIT_LOG - append one row to YAUDIT [YAUD] (script YAUDLIB)
+# Returns [V]CST_AOK, or [V]CST_AERROR with ERRMSG filled.
 ##############################################################
+Funprog YAUDIT_LOG(TBL, TBLKEY, EVT, FLD, OLDVAL, NEWVAL, REASON, ERRMSG)
+Value Char TBL(), TBLKEY(), EVT(), FLD(), OLDVAL(), NEWVAL(), REASON()
+Variable Char ERRMSG()
+Local File YAUDIT [YAUD]
+Local Shortint TRANS_OPEN
+Local Integer STA
+Local Char YNUM(20)
+  ERRMSG = ""
+  [L]TRANS_OPEN = adxlog
+  If [L]TRANS_OPEN = 0 : Trbegin [YAUD] : Endif
+  STA = func ANM_TOOL.NUMERO(GACTX, "YAU", "", date$, "", YNUM, ERRMSG)
+  If STA <> [V]CST_AOK
+    If [L]TRANS_OPEN = 0 : Rollback : Endif
+    End [V]CST_AERROR
+  Endif
+  Raz [F:YAUD]
+  [F:YAUD]AUDNUM = YNUM
+  [F:YAUD]AUDDATE = date$
+  [F:YAUD]AUDDTM = datetime$
+  [F:YAUD]USR = GACTX.USER
+  [F:YAUD]TBL = [L]TBL : # [L] because parameters share the column names
+  [F:YAUD]TBLKEY = [L]TBLKEY
+  [F:YAUD]EVT = [L]EVT
+  [F:YAUD]FLD = [L]FLD
+  [F:YAUD]OLDVAL = left$([L]OLDVAL, 250)
+  [F:YAUD]NEWVAL = left$([L]NEWVAL, 250)
+  [F:YAUD]REASON = left$([L]REASON, 250)
+  Write [YAUD]
+  If fstat
+    ERRMSG = "YAUDIT write failed, fstat" - num$(fstat)
+    If [L]TRANS_OPEN = 0 : Rollback : Endif
+    End [V]CST_AERROR
+  Endif
+  If [L]TRANS_OPEN = 0 : Commit : Endif
+End [V]CST_AOK
 ```
 
-| Column | Type | Use |
-|--------|------|-----|
-| `LOGID` | Char(20) | Generated key (`NUMERO`) |
-| `LOGDAT` | Date | When the change happened |
-| `LOGTIM` | Time | Sub-second precision |
-| `LOGUSER` | Char(10) | `[V]GUSER` |
-| `LOGFOLDER` | Char(10) | `[V]GFOLDER` |
-| `TBL` | Char(20) | Affected table |
-| `TBLKEY` | Char(60) | Primary key of the affected row |
-| `ACTION` | Char(20) | `CREATE`, `UPDATE`, `DELETE`, `ANONYMIZE`, `EXPORT`, `LOGIN`, `LOGOUT` |
-| `FIELD` | Char(40) | (For UPDATE) the column changed |
-| `OLDVAL` | Char(2000) | (For UPDATE) prior value, truncated |
-| `NEWVAL` | Char(2000) | (For UPDATE) new value, truncated |
-| `REASON` | Char(200) | Why (e.g. "GDPR erasure ticket #123") |
-| `CONTEXT` | Char(500) | Source (function code, batch ID, REST endpoint) |
-| `IP` | Char(45) | Source IP for service callers (IPv6 fits) |
+Inside class code, call it from update events (transaction already open, `this.ACTX` available) — never open a
+transaction there (`v12-classes.md`).
 
-Indexes: `(TBL, TBLKEY, LOGDAT)`, `(LOGUSER, LOGDAT)`, `(LOGDAT)` for time-range queries.
+## Sequence numbers with NUMERO
 
-### Writing audit rows safely
+Documented API (script **ANM_TOOL**):
+`Funprog NUMERO(ACTX, COUNTER, FCY, DAT, COMP, VAL, ERRMS)` — `Value Instance ACTX` (context), `Value Char COUNTER`,
+`Value Char FCY` (site, mandatory if the counter structure uses it — no default), `Value Date DAT`,
+`Value Char COMP` (complement), `Variable Char VAL` (returned number), `Variable Char ERRMS`. Returns
+`[V]CST_AOK` or `[V]CST_AERROR`.
+
+- It **must run inside a transaction** (e.g. `AINSERT_BEFORE`, `AUPDATE_BEFORE`, `AINSERT_AFTER`, `AUPDATE_AFTER`
+  events, or after `Trbegin` in a script — test `adxlog`).
+- The counter (here `YAU`) is set up in the sequence number functions (structures: GESANM).
+- Script `SUBANM` hosts the entry points `NUMERO` (add logic to a number assignment) and `NUMEROCHG` (change the
+  number) — use GESAPE to hook them, see `entry-points.md`.
+
+## GDPR: where personal data lives
+
+- **Contacts** (GESAIN): last/first name, title, date of birth, phones, mobile, email, ID card, residence permit,
+  social security fund; a contact's personal address/email differ from his professional ones per BP.
+- **BP addresses and contacts** tabs (GESBPR, GESBPC): address lines, phones, email, contact names.
+- Users (GESAUS), sales reps, employees in HR modules, free-text texts and attachments, and every specific table
+  or `Y` field you added.
+- Underlying tables named in Sage's TRTBPA entry-point documentation: `BPADDRESS` [BPA] (BP addresses),
+  `CONTACT` [CNT] (contacts) and `CONTACTCRM` (contact relationships). Check column names in GESATB before
+  coding against them; do not assume email/phone columns on BPCUSTOMER.
+- Start the inventory with the standard "List of personal data" export (community-reported) and complete it with
+  your specific tables.
+
+## GDPR: access and portability
+
+- Produce a structured, machine-readable export (JSON or CSV) of the subject's data: an import/export template
+  (GESAOE, `imports-exports.md`) or a REST query on the relevant representations (`web-services-rest.md`).
+- When code builds JSON by hand, escape every value with `escjson` (`security-permissions.md`).
+- The export is itself a personal-data access: log it with
+  `STA = func YAUDLIB.YAUDIT_LOG("BPCUSTOMER", YBPC, "GDPR_EXPORT", "", "", "", YTICKET, YERR)`.
+
+## GDPR: erasure by pseudonymisation
+
+Accounting and commercial documents usually have a legal retention period that overrides erasure: keep the
+documents, remove what identifies the person. Prefer the standard functions (Contacts, BP management, data
+protection search/update) so business rules and the standard audit run. For **specific** data:
 
 ```l4g
 ##############################################################
-# YAUDIT_LOG — single entry point for all audit writes
+# YGDPR_PSEUDO - pseudonymise specific personal data of a customer
+# YCUSTNOTE [YCN]: specific table; Y_GDPRSTA/Y_GDPRDAT: specific fields added to BPCUSTOMER
 ##############################################################
-Subprog YAUDIT_LOG(TBL, KEY, ACTION, FIELD, OLDV, NEWV, REASON)
-Value Char TBL(), KEY(), ACTION(), FIELD(), OLDV(), NEWV(), REASON()
+Funprog YGDPR_PSEUDO(YBPC, YTICKET, ERRMSG)
+Value Char YBPC(), YTICKET()
+Variable Char ERRMSG()
+Local File BPCUSTOMER [BPC], YCUSTNOTE [YCN]
+Local Shortint TRANS_OPEN
+Local Integer STA
+  ERRMSG = ""
+  [L]TRANS_OPEN = adxlog
+  If [L]TRANS_OPEN = 0 : Trbegin [BPC], [YCN] : Endif
+  Update [YCN] Where YBPCNUM = YBPC
+  & With YNOTE = "", YEMAIL = "", YPHONE = ""
+  If fstat
+    ERRMSG = "YCUSTNOTE update failed, fstat" - num$(fstat)
+    If [L]TRANS_OPEN = 0 and adxlog = 1 : Rollback : Endif : # fstat 1/3: already rolled back
+    End [V]CST_AERROR
+  Endif
+  Update [BPC] Where BPCNUM = YBPC With Y_GDPRSTA = 2, Y_GDPRDAT = date$
+  If fstat or adxuprec <> 1
+    ERRMSG = "Customer" - YBPC - "not updated"
+    If [L]TRANS_OPEN = 0 and adxlog = 1 : Rollback : Endif
+    End [V]CST_AERROR
+  Endif
+  # Never log the erased values: OLDVAL stays "[redacted]"
+  STA = func YAUDLIB.YAUDIT_LOG("BPCUSTOMER", YBPC, "GDPR_PSEUDO", "", "[redacted]", "", YTICKET, ERRMSG)
+  If STA <> [V]CST_AOK
+    If [L]TRANS_OPEN = 0 : Rollback : Endif
+    End [V]CST_AERROR
+  Endif
+  If [L]TRANS_OPEN = 0 : Commit : Endif
+End [V]CST_AOK
+```
 
-    Local File YAUDITLOG [YAU]
-    Local Char NEWID(20)
+`Update` always targets the abbreviation (`[BPC]`), never the table name. Direct `Update` bypasses class rules:
+keep it for specific columns; change standard personal fields through the standard functions.
 
-    Call NUMERO("YAULOGN", "", "", "", date$, "", NEWID) From GESNUM
+## Retention and purge
 
-    Raz [F:YAU]
-    [F:YAU]LOGID    = NEWID
-    [F:YAU]LOGDAT   = date$
-    [F:YAU]LOGTIM   = time$
-    [F:YAU]LOGUSER  = [V]GUSER
-    [F:YAU]LOGFOLDER = [V]GFOLDER
-    [F:YAU]TBL      = TBL
-    [F:YAU]TBLKEY   = KEY
-    [F:YAU]ACTION   = ACTION
-    [F:YAU]FIELD    = FIELD
-    [F:YAU]OLDVAL   = left$(OLDV, 2000)
-    [F:YAU]NEWVAL   = left$(NEWV, 2000)
-    [F:YAU]REASON   = left$(REASON, 200)
+1. Write the policy per data class: retention period (from legal), start event, end action (delete, pseudonymise,
+   archive), approver.
+2. Standard transactional data: configure archive/purge (APARHIS, AHISTO, archive folder via CREHISTO); only
+   closed data with an expired shelf life is eligible.
+3. Specific tables: a recurring batch task (GESABT task, GESABA schedule — `batch-scheduling.md`) that deletes or
+   pseudonymises by date, logs counts, and runs in short transactions:
 
-    # Run in a sub-transaction; never let an audit failure roll back the business write
-    Trbegin [YAU]
-    Write [YAU]
-    If fstat
-        Rollback
-        Call ECRAN_TRACE("YAUDIT_LOG WRITE failed fstat=" + num$(fstat), 2) From GESECRAN
-    Else
-        Commit
-    Endif
+```l4g
+Subprog YPURGE_AUDIT(KEEPDAYS)
+Value Integer KEEPDAYS
+Local File YAUDIT [YAUD]
+Local Date YLIMIT
+Local Integer YNB
+Local Shortint TRANS_OPEN
+  [L]TRANS_OPEN = adxlog
+  If [L]TRANS_OPEN <> 0 : End : Endif
+  YLIMIT = date$ - KEEPDAYS
+  Trbegin [YAUD]
+  Delete [YAUD] Where AUDDATE < YLIMIT
+  If fstat
+    Rollback
+    End
+  Endif
+  YNB = adxdlrec
+  Commit
 End
 ```
 
-The audit must not couple the business transaction. If logging fails, you record the failure (in `adxlog.log`), but the business change still commits — the alternative ("roll back the whole sale because the audit log is full") is worse than logging gaps.
+Report `YNB` in the task log (`ALOG`, `debugging-traces.md`): the log is your proof that the policy runs.
 
-## GDPR — right to access (Art. 15)
+## Gotchas
 
-The data subject asks "what do you have on me?". You return all personal data.
+- There is no nested transaction: an "independent" audit sub-transaction inside a caller's transaction is impossible
+  (`Trbegin` while `adxlog` = 1 raises an error).
+- `NUMERO` must run inside a transaction; in class code use the update events, not the control events.
+- Logging the old value of an erased field defeats the erasure; logging full payloads copies personal data.
+- Table auditing (AUDITH/AUDITL) grows fast on busy tables and is not a backup: purge it like any other data.
+- A retention batch that deletes before the legal floor is a compliance incident: default to "keep" until legal
+  signs the policy.
+- Free-text fields (comments, texts, attachments) hold personal data too.
 
-Pattern: a Subprog or REST endpoint that, given a subject identifier, walks every table holding personal data and exports rows as JSON. Skeleton:
+See also: `security-permissions.md`, `batch-scheduling.md`, `database.md`, `imports-exports.md`,
+`web-services-rest.md`, `entry-points.md`, `v12-classes.md`, `debugging-traces.md`, `data-migration.md`.
 
-```l4g
-##############################################################
-# YGDPR_EXPORT — collect everything tied to a BPC for GDPR
-# (skeleton — fill per-table sections to suit your schema)
-##############################################################
-Subprog YGDPR_EXPORT(BPC, OUTFILE)
-Value    Char BPC()
-Variable Char OUTFILE()
-
-    Local Char    PATH(500)
-    Local Integer HDL
-
-    PATH = filpath("TMP", "YGDPR_" - BPC - "_" - num$(date$, "AAAAMMJJ") - ".json", "")
-    Openo PATH Using HDL
-    If fstat : Call ECRAN_TRACE("Cannot open " - PATH, 2) From GESECRAN : End : Endif
-
-    Writeseq "{" Using HDL
-    Writeseq '  "subject": "' - BPC - '",' Using HDL
-    Writeseq '  "extracted_at": "' - num$(date$, "AAAA-MM-JJ") - '",' Using HDL
-    # Sections: customer master, orders, addresses, audit excerpts.
-    # Use func YJSON_ESC for any free-text field.
-    # Use For [SOH] Where BPCORD = BPC … Next for related-entity lists.
-    Writeseq "}" Using HDL
-    Close HDL
-
-    OUTFILE = PATH
-
-    # The export itself is a personal-data access — record it
-    Call YAUDIT_LOG("BPCUSTOMER", BPC, "EXPORT", "", "", "",
-        "GDPR access request") From YAUDITHELPER
-End
-```
-
-For the JSON-build escape helpers, see `web-services-rest.md`. The export itself is a personal-data access — log it in the audit trail with `ACTION = "EXPORT"`.
-
-## GDPR — right to erasure (Art. 17)
-
-The subject asks to be deleted. You **cannot** literally `Delete` a customer if there are accounting entries — French / EU / US law all require keeping financial records for 7-10 years.
-
-The pattern is **pseudonymisation**: replace identifying fields with a non-identifying token, keep the row and its accounting links intact.
-
-```l4g
-##############################################################
-# YGDPR_ANONYMIZE — replace personal data with non-identifying tokens
-##############################################################
-Subprog YGDPR_ANONYMIZE(BPC, TICKET)
-Value Char BPC(), TICKET()
-
-    Local Char NEWNAM(60), NEWMAIL(80)
-    NEWNAM = "ANON_" - BPC
-    NEWMAIL = "anon_" - BPC - "@anonymized.local"
-
-    Local File BPCUSTOMER [BPC1]
-    Read [BPC1]BPCNUM0 = BPC
-    If fstat : End : Endif
-
-    Trbegin [BPC1]
-    Update BPCUSTOMER Where BPCNUM = BPC
-        With BPCNAM = NEWNAM,
-             EMAIL = NEWMAIL,
-             PHONE = "",
-             FAX = "",
-             YGDPR_STATUS = "ANONYMIZED",
-             YGDPR_ANONDAT = date$,
-             UPDTICK = UPDTICK + 1
-    If fstat Or [S]adxuprec = 0
-        Rollback
-        End 1
-    Endif
-    Commit
-
-    # Log every field overwrite — value pre-anonymisation must NOT be in the log
-    Call YAUDIT_LOG("BPCUSTOMER", BPC, "ANONYMIZE", "BPCNAM", "[redacted]", NEWNAM, TICKET) From YAUDITHELPER
-    Call YAUDIT_LOG("BPCUSTOMER", BPC, "ANONYMIZE", "EMAIL",  "[redacted]", NEWMAIL, TICKET) From YAUDITHELPER
-
-    # Apply to related personal-data tables
-    # — addresses, contacts, custom YPROFILE columns, etc.
-    Call YGDPR_ANONYMIZE_RELATED(BPC, TICKET) From YGDPRHELPER
-End
-```
-
-Critical: do **not** log the original value in `OLDVAL` for an anonymisation — that defeats the erasure. Use `[redacted]` as the placeholder.
-
-### What you can keep
-
-| Keep (legal basis) | Anonymise / remove |
-|--------------------|-------------------|
-| Order numbers, amounts, dates (accounting) | Customer name, email, phone |
-| Item references in the orders | Free-text comments containing personal data |
-| Aggregated transaction history | Marketing preferences, profile, contact persons |
-| Audit log of the anonymisation itself | Direct identifiers in custom tables |
-
-The accounting record stays; the link to a person doesn't.
-
-## GDPR — data portability (Art. 20)
-
-Same as access (Art. 15) but the format is constrained: machine-readable (JSON, XML, CSV — not PDF), structured (each field clearly labelled), commonly used.
-
-The Art. 15 export pattern above already produces JSON and satisfies Art. 20. Keep one export pipeline serving both rights.
-
-## Financial audit trail (SOX, FCC, etc.)
-
-Accounting-relevant changes (`GACCDUDATE`, `GACCENTRY`, posted journals, validated invoices) must be:
-
-1. **Pre-validation** — recorded with the user who entered, when, with what values.
-2. **Post-validation** — every modification logged: what was the prior value, what it became, who changed it, when.
-3. **Reversal** — never an in-place delete. Use a counter-entry that nets to zero, with a reference back to the original.
-
-Standard X3 enforces most of this on its own (validated entries cannot be modified). Custom code touching accounting tables must follow the same discipline: never `Update GACCENTRY` to rewrite an amount — instead create a reversal entry that nets to zero with `REFNUM` pointing back to the original, and call `YAUDIT_LOG("GACCENTRY", NUM, "REVERSED", …)` to record the link.
-
-## Retention policies
-
-Define for each personal / sensitive data class:
-
-- **What is the retention period?** (legal floor: 5y commercial, 7-10y accounting in many EU countries, 30 years for HR pension data in France, etc.)
-- **What event starts the clock?** (creation, last activity, contract end?)
-- **What happens at the end?** (delete, anonymise, archive to cold storage?)
-- **Who approves a deletion?** (legal, compliance, function owner)
-
-Implement as a recurrent batch:
-
-```l4g
-##############################################################
-# YBATCH_RETENTION — apply retention rules
-# Runs nightly. Reads YRETENTION_POLICY for the rules.
-##############################################################
-$MAIN
-Local File YRETENTION_POLICY [YRP]
-For [YRP] Where ACTIVE = 1
-    Call YAPPLY_RETENTION([F:YRP]TBL, [F:YRP]CONDITION, [F:YRP]ACTION,
-                          [F:YRP]RETENTION_DAYS) From YRETENTIONHELPER
-Next
-Return
-```
-
-`YRETENTION_POLICY` table holds rules: "anonymise BPCUSTOMER inactive for 7 years", "delete YINTLOG older than 13 months", "archive SORDER status 9 older than 10 years to YARCHIVE_SORDER".
-
-The batch logs every action it takes — that's the legal proof retention is enforced.
-
-## Consent tracking
-
-For data collected with consent (marketing, optional profile fields), track:
-
-| Column | Use |
-|--------|-----|
-| `CONSENT_TYPE` | `MARKETING`, `PROFILING`, `THIRD_PARTY_SHARE` |
-| `CONSENT_GIVEN` | Boolean |
-| `CONSENT_DAT` | When |
-| `CONSENT_SRC` | Where the consent came from (web form, contract, phone) |
-| `CONSENT_TXT_VER` | Version of the consent text the user agreed to |
-
-Withdrawn consent ⇒ stop using the data, even if you keep the record. Anonymise on withdrawal if the data has no other legal basis.
-
-## Reporting and proof
-
-Auditors and DPAs ask "show me what happened to subject X". The query is the audit table:
-
-```l4g
-For [YAU] Where TBLKEY = SUBJECT_ID Order By Key LOGDAT0
-    # Print row: date, user, action, field, reason
-Next
-```
-
-Pre-build a Crystal report or REST endpoint over `YAUDITLOG` keyed by subject ID — auditors should not need a developer to answer this. See `reports-printing.md`.
-
-## Common pitfalls
-
-- **Audit log table writable by application users** — anyone with table-write rights can edit history. Restrict to the audit helper's user, expose via `YAUDIT_LOG` only.
-- **Truncating values to 50 chars in the audit table** — loses the actual change. Allow at least 2000 characters; truncate only what's logged from a specific call.
-- **Forgetting to log reads** — Art. 15 access exports are themselves audit events.
-- **Logging the `OLDVAL` during an anonymisation** — defeats the erasure. Use `[redacted]`.
-- **Hard-deleting a customer with accounting history** — illegal in most jurisdictions. Anonymise instead.
-- **Retention batch deleting before the legal floor** — confirm the floor with legal before automating. The default is "keep forever" until proven you may delete.
-- **Audit table shares the same DB as production** — fine, but back it up separately and consider a different retention from the operational data it audits.
-- **No DPA-readable export** — when a regulator asks, "give me everything on subject X" must be one query, one click, one CSV.
-- **Free-text fields contain personal data** — comments on orders / invoices may contain names. Anonymisation must scan and pseudonymise these too.
-
-## Audit / compliance checklist
-
-1. `YAUDITLOG` table declared, indexed, write-only at the application layer?
-2. Single `YAUDIT_LOG` helper used by all custom code?
-3. Audit log write is in a sub-transaction — failure does not roll back business?
-4. Anonymisation pattern wired for every table holding personal data?
-5. Right-to-access export covers customer master, related transactions, audit trail?
-6. Right-to-erasure preserves accounting links via pseudonymisation?
-7. Retention policy table defined; nightly batch applies it?
-8. Consent tracking columns where consent is the legal basis?
-9. Auditor-readable report / endpoint pre-built over `YAUDITLOG`?
-10. Free-text fields scanned for personal data during anonymisation?
-
-See also: `security-permissions.md` (audit log foundations, ACL on the helper), `data-migration.md` (preserving audit trail through migrations), `batch-scheduling.md` (retention batch), `imports-exports.md` (Art. 20 export format), `reports-printing.md` (auditor-facing reports), `code-review-checklist.md` (Tier 4 audit-log review checks).
+## Sources
+- https://online-help.sagex3.com/erp/11/en-US/OBJ/ACV_AUDIT.htm
+- https://online-help.sagex3.com/erp/12/en-us/Content/V7DEV/getting-started_security-best-practices.html
+- https://online-help.sagex3.com/erp/11/en-US/V7DEV/api-guide_get-a-sequence-number-value.html
+- https://online-help.sagex3.com/erp/12/en-us/Content/OBJ/ADC_SUBANM.htm
+- https://online-help.sagex3.com/erp/12/en-us/Content/FCT/GESANM.htm
+- https://online-help.sagex3.com/erp/12/en-us/Content/FCT/AHISTO.htm , …/APARHIS.htm , …/CREHISTO.htm
+- https://online-help.sagex3.com/erp/12/en-us/Content/FCT/GESAIN.htm , …/GESBPR.htm
+- https://online-help.sagex3.com/erp/12/en-us/Content/V7DEV/4gl_trbegin.html , …/4gl_delete.html , …/4gl_adxdlrec.html , …/4gl_datetime$.html
+- https://communityhub.sage.com/us/sage_x3/b/sageerp_x3_product_support_blog/posts/how-to-get-the-next-sequence-number-using-v7-style-coding (community)
+- https://www.greytrix.com/blogs/sagex3/2022/01/03/gdpr-in-sage-x3/ (community)
+- https://www.greytrix.com/blogs/sagex3/?p=22096 (community)
+- https://online-help.sagex3.com/erp/12/en-us/Content/OBJ/ADC_TRTBPA.htm

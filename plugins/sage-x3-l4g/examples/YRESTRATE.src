@@ -1,0 +1,62 @@
+##############################################################
+# YRESTRATE - one exchange rate from an external JSON API
+#
+# Purpose
+#   GET <Base Url>/latest?base=EUR&symbols=USD through the Syracuse outgoing
+#   REST web service YFXRATES, with up to 3 attempts on 429 / 5xx, parse
+#   {"base":"EUR","rates":{"USD":1.0832}} with ParseInstance / Contains$ /
+#   Select$, and log every call through YINTLOG_WRITE.
+#   Returns the rate, 0 when the call or the parsing failed.
+#
+# Prerequisites
+#   - Syracuse, Outgoing REST web services: record YFXRATES, Base Url of the
+#     partner (here https://api.rates.example/v1), content type JSON, no
+#     authentication (Basic credentials, if any, belong in the record, not here)
+#   - Table YINTLOG [YIL] and script YINTLOGLIB (Subprog YINTLOG_WRITE), both
+#     defined in web-services-integration.md
+#   - A runtime that knows ParseInstance / Select$ / Contains$ (community-reported
+#     around V12 patch 34 / 2023 R2, see version-caveats.md); without it, parse
+#     with instr / mid$ as in web-services-soap-client.md
+#   - Call from batch (batch-scheduling.md) rather than from a screen: Sleep and
+#     a slow partner block the session, and no timeout is documented
+#
+# Usage: [L]RATE = func YRESTRATE.YREST_GET_RATE("EUR", "USD")
+# References: web-services-rest-client.md, web-services-integration.md
+##############################################################
+Funprog YREST_GET_RATE(BASECUR, TARGETCUR)
+Value Char BASECUR(), TARGETCUR()
+Local Char     PCOD(100)(1..10), PVAL(255)(1..10), HCOD(100)(1..10), HVAL(255)(1..10)
+Local Char     SUBURL(255), TXT(50), STA(10)
+Local Clbfile  RESHEAD(0), RESBODY(0)
+Local Integer  HTTPSTA, TRY, WAIT
+Local Decimal  RATE
+Local Instance OBJ Using OBJECT
+  [L]SUBURL = "/latest?base=" + [L]BASECUR + "&symbols=" + [L]TARGETCUR
+  [L]HCOD(1) = "Accept"
+  [L]HVAL(1) = '"application/json"'           : # header values are JSON constants
+  [L]WAIT = 2
+  For TRY = 1 To 3
+    [L]HTTPSTA = func ASYRRESTCLI.EXEC_REST_WS("YFXRATES", "GET", [L]SUBURL,
+    & [L]PCOD, [L]PVAL, [L]HCOD, [L]HVAL, "{}", 0, "", [L]RESHEAD, [L]RESBODY)
+    If [L]HTTPSTA <> 429 and [L]HTTPSTA < 500
+      Break
+    Endif
+    If [L]TRY < 3
+      Sleep [L]WAIT
+      [L]WAIT = [L]WAIT * 2
+    Endif
+  Next TRY
+  [L]RATE = 0
+  [L]STA = "KO"
+  If [L]HTTPSTA = 200
+    ParseInstance OBJ With [L]RESBODY
+    If OBJ.Contains$("/rates/" + [L]TARGETCUR) = 0    : # 0 means the path EXISTS
+      [L]TXT  = OBJ.Select$("$.rates." + [L]TARGETCUR)
+      [L]RATE = val([L]TXT)
+      [L]STA  = "OK"
+    Endif
+    FreeGroup OBJ
+  Endif
+  Call YINTLOG_WRITE("OUT", "YFXRATES", "GET " + [L]SUBURL, "", [L]HTTPSTA, [L]STA, "", [L]RESBODY)
+  & From YINTLOGLIB
+End [L]RATE

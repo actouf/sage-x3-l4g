@@ -1,216 +1,189 @@
 # Diagnostics and post-mortem
 
-What to do when production already broke. Reading `adxlog.log`, dumps, lock states, hung pools, batch failures — all the "the customer can't enter orders, fix it now" surfaces. Companion to `debugging-traces.md` (which covers prevention via traces and supervisor tracing).
+What to do when production is already broken: a generic triage order, then the X3 V12 screens that answer
+"who is connected", "who holds the lock", "why did the batch fail" and "who changed this row", plus a
+database-side checklist and an incident report template. Tracing techniques themselves are in
+`debugging-traces.md`; slowness analysis in `performance.md`.
+
+## Contents
+- [Triage order](#triage-order)
+- [Symptom to first screen](#symptom-to-first-screen)
+- [Sessions and users](#sessions-and-users)
+- [Locked symbols vs database locks](#locked-symbols-vs-database-locks)
+- [Batch failures](#batch-failures)
+- [Engine and Syracuse logs](#engine-and-syracuse-logs)
+- [Database-side checks](#database-side-checks)
+- [Who changed this data?](#who-changed-this-data)
+- [Incident report template](#incident-report-template)
+- [Gotchas](#gotchas)
+- [Sources](#sources)
 
 ## Triage order
 
-The first 60 seconds of a P1:
+Generic, tool-independent order for the first minutes of a P1:
 
-1. **Is it widespread or isolated?** One user vs all users — different paths. Check Syracuse session list (`Administration → Diagnostics → Sessions`).
-2. **Is it the runtime or the data?** Engine crashed (sessions all dead) vs business error (one workflow rejects). Different fixes.
-3. **What changed recently?** Last patch, last activity-code toggle, last batch run, last folder-parameter change.
-4. **Is the database alive?** `Administration → Diagnostics → Database`. If the DB is down or saturated, no L4G fix helps.
-5. **Are the locks released?** A stuck `Readlock` blocks every reader. Lock state below.
+1. **Scope** — one user, one function, one site, or everybody? One endpoint (folder) or all of them?
+2. **Layer** — browser/Syracuse (pages do not load at all), X3 runtime (functions fail, sessions die), database
+   (everything waits), or business logic (one rule rejects)?
+3. **Change** — last patch, last activity-code or parameter change, last deployment of specific code, last batch.
+4. **Capture before you fix** — session list, lock list, request log, DB blocking chain, screenshots. Restarting a
+   service or killing sessions destroys the evidence.
+5. **Contain** — workaround (disable a recurring task, ask users to leave a function) before root-causing.
+6. **Fix on a copy first** — reproduce in a test folder; deliver the fix as a patch, never by editing production.
 
-## Reading `adxlog.log`
+## Symptom to first screen
 
-The supervisor's master log file lives in `<folder>/TRA/adxlog.log` (rotating) and `<runtime>/log/adxlog_<server>.log` (engine-wide).
+| Symptom | Look first at |
+|---|---|
+| "Record being modified by another user" style messages on one record | Locked symbols (VERSYMB) |
+| Save hangs for several users, no error | Database blocking chain (below), then VERSYMB |
+| A batch task shows Error / Warning / stays In progress | Request management (ASYRREQMAN) → Log |
+| Everybody slow | Sessions information, then DB waits; `performance.md` |
+| SOAP/REST callers fail | X3 session logs (type Web service), integration log — `web-services-integration.md` |
+| Wrong values in a record | Audit trail (AUDITH/AUDITL) or custom audit table — `audit-compliance.md` |
+| Runtime errors with script/line | Log file of the function (TRA), `errn`/`errl` traces — `debugging-traces.md` |
 
-Format (approximate):
+## Sessions and users
 
-```
-2026-05-08 14:32:11 [USR1234] [GESBPC] [SUBPROG=YCREATE_BPC] ERR fstat=2 line=147 stat1=20 funfat=0
-```
+- **Sessions information** (Syracuse administration page; menu Administration > Usage > Sessions management >
+  Session information, community-reported for V12 2021 R1 and later): one line per web connection with type
+  (Standard, Batch, SOAP), user login, client IP, host/process, endpoint, number of X3 sessions, badges, last access
+  and expiry. Actions: **Disconnect** (forces re-authentication) and **Activate session trace** (levels Error,
+  Warning, Info, Debug, Silly; written to the Syracuse `logs` folder unless `logpath` is changed in `nodelocal.js`).
+- **Session infos**: per web session, the X3 process ids it uses (Classic pages open at least two processes).
+- **User monitoring (APSADX)** — the X3-side session list. Community-reported: APSADX has no FCT page; the code
+  comes from a Sage support blog post
+  (https://communityhub.sage.com/sage-global-solutions/sage_x3/b/sage-x3-uk-support-insights/posts/improved-x3-session-information-in-latest-v12-patch-release),
+  which notes that sessions present in APSADX but unknown to Syracuse ("Unknown X3 sessions") may be ghost
+  sessions to disconnect manually.
+- To match an X3 user to a database session, Sage support suggests Development > Utilities > System monitor >
+  Users to read the `sadoss` process id, then filter the DB trace on that client process id (community-reported).
 
-Fields you care about:
+Before disconnecting anything, record user, endpoint, process ids and what the session was running.
 
-| Field | What |
-|-------|------|
-| Timestamp | UTC unless the server is local-tz |
-| User | `[V]GUSER` of the session that emitted |
-| Function | The screen / batch / service code |
-| Subprogram + line | The script that emitted, and the line number — match the source |
-| `fstat` | Last DB / file status code |
-| `stat1` | Last operation status (often more detailed than `fstat`) |
-| `funfat` | Function fatal flag — 1 if the engine bailed |
+## Locked symbols vs database locks
 
-### `fstat` cheat sheet
+Two different mechanisms produce "locked" symptoms:
 
-Most-seen non-zero values:
+| | Symbol lock | Database row lock |
+|---|---|---|
+| Created by | `Lock SYMBOL` (V6-style object management), stored in table `APLLCK` (`[S]adxtlk`) | `Readlock`, `For … With Lock`, any row modified inside a transaction |
+| Lifetime | Until `Unlock`, or until the owning session is ended | Until `Commit` / `Rollback` |
+| Visible in | **Locked symbols** function **VERSYMB** | DB tools only (blocking query below) |
+| Typical cause | Browser closed without logout ("phantom" session, community-reported), crashed process | Long transaction, user prompt inside a transaction, runaway batch |
 
-| `fstat` | Meaning | First check |
-|---------|---------|-------------|
-| 0 | OK | (no error) |
-| 1 | Generic failure | Read `stat1` for detail |
-| 2 | Not found | Key doesn't match any row |
-| 3 | Already exists (Write) | Duplicate primary key |
-| 4 | Concurrency / lock conflict | Another session holds the row |
-| 5 | Deadlock | DB rolled back; retry the transaction |
-| 6 | Invalid key / index | Index name in code doesn't match `GESATB` |
-| 7 | Invalid table or alias | `Local File` declaration missing or wrong |
-| 50+ | Driver-specific | Read `[S]stat1`; usually a DB-level error |
+VERSYMB (V11 menu Development > Utilities > Verifications > Locks > Locked symbols) lists the symbol,
+machine, user, X3 identifier (`adxuid(1)` of the session) and date-time. Object symbols are the object code followed
+by the key (e.g. `AUSMARTIN` for user MARTIN; multi-part keys put the second component first, separated by `\`).
+The **User Monitor** action jumps to the session holding the symbol; ending that session releases it.
+Sage's Lock documentation notes that V7-style code relies on optimistic locking (`RewriteByKey` + UPDTICK)
+instead of symbol locks — see `database.md`.
 
-`stat1` carries the SQL state or a finer code on most drivers — log both.
+Order of preference to clear a lock: let the user finish/leave the record → end the owning session from the
+monitor → database-level kill by a DBA (rolls back that session's open transaction). Never delete APLLCK rows by
+hand without Sage support.
 
-### `funfat` and engine bail-out
+## Batch failures
 
-When `funfat = 1`, the engine considered the situation fatal and aborted the call stack to the nearest user-recovery point (typically the screen's main loop or the batch's `$MAIN` exit). Possible causes:
+Request management (**ASYRREQMAN**) lists every request sent to the batch server with folder, task, user,
+dates, session id, timeout and status (local menu 21): Standby, In progress, Finished, Held, Kill, Canceled,
+Error, Overdue, Warning (task ended on a non-blocking code, `GERRBATCH` < 100).
 
-- A `Onerrgo` jump landed at a label that doesn't exist
-- A division by zero with no `Onerrgo` in scope
-- A type mismatch between actual and declared parameter
-- An unhandled supervisor signal (memory limit, runtime kill)
+1. Open the request line → **Log**: the request trace `RQT<request number>` from the TRA directory of the runtime's
+   SERVX3 directory. The server-level **Log** action shows `server.tra` (server start, request launch, end).
+2. Open the function's own log (`F<n>.tra` or your `ALOG` file) via LECTRACE/AREADLOG — `debugging-traces.md`.
+3. If the log is empty, reproduce with an *X3 session logs* entry of type **Batch query** (filter on user, task code)
+   or with `openlog` around the suspect call.
+4. Check **Parameter entry** on the request: the values the task really received.
+5. After the fix, relaunch once manually, then re-enable the recurring task (GESABA) — `batch-scheduling.md`.
 
-### Searching the log
+Since 2025 R1 (V12.0.37) ASYRREQMAN has extra search/sort/filter features and a "Classic function" action giving
+access to the classic AREQUETE function.
 
-```bash
-# All errors for a user in the last hour
-grep "USR1234" /<folder>/TRA/adxlog.log | grep "ERR" | awk -v t="$(date -d '1 hour ago' +%Y-%m-%dT%H:%M)" '$1>=t'
+## Engine and Syracuse logs
 
-# All deadlocks today
-grep "$(date +%Y-%m-%d)" /<folder>/TRA/adxlog.log | grep "fstat=5"
+- X3 runtime: engine log by code (`openlog`) or by the *Engine trace* administration page; targeted *X3 session
+  logs* (written in the runtime `logs` directory, auto-stopped after `MaxLogTime` minutes). Details and flag values:
+  `debugging-traces.md`.
+- Syracuse: session traces go to the Syracuse `logs` folder (`logpath` in the `collaboration` section of
+  `nodelocal.js`). Capture them before restarting the web server.
+- There is no `adxlog.log` file to grep: `adxlog` is the transaction-level variable, not a log.
 
-# All occurrences of a custom subprogram
-grep "SUBPROG=YCREATE_BPC" /<folder>/TRA/adxlog.log
-```
+## Database-side checks
 
-For long-running incidents, copy the relevant log to a working file before it rotates — `adxlog.log` rolls when it exceeds the configured size (default 100 MB) and the older rotation is gzipped.
+Generic DBA queries (not X3-specific) to find who blocks whom. Run them while the problem is happening.
 
-## Stuck locks — find and clear
-
-When users say "the screen freezes" or "save hangs", a stuck row lock is the most common culprit. The session that took the lock crashed, lost its connection, or returned without committing.
-
-### Find the lock
-
-`Administration → Diagnostics → Locks` (or `GESALOCK`):
-
-| Column | What |
-|--------|------|
-| Table | Locked table |
-| Key | Primary key of the locked row |
-| User | Who holds the lock |
-| Session | Adonix session ID |
-| Started | When the lock was taken |
-
-If "Started" is more than a few seconds ago and the session is supposedly idle, the lock is stuck.
-
-### Clear the lock
-
-Three options, ranked by safety:
-
-1. **Wait for the session timeout.** The engine releases stuck locks when the session is detected dead — usually a few minutes. Safest.
-2. **Kill the session via Syracuse.** `Administration → Diagnostics → Sessions → kill`. Releases the lock cleanly.
-3. **Force-clear at DB level.** Last resort — if the engine doesn't release, a DBA terminates the DB connection. Risk: rolls back the transaction the session was in, may leave application data inconsistent.
-
-Never disable locking globally to "unstick" things. Identify the holder and clear it specifically.
-
-## Hung AWS pool / SOAP timeouts
-
-If SOAP callers see timeouts but the engine logs no errors:
-
-1. Check the pool size (`GESAPO` → status). If `Active = Max` and `Pending > 0`, the pool is saturated.
-2. Check what the active sessions are doing — `GESALI` for queued, `GESALOCK` for blocked.
-3. If a session is stuck on a slow query, the fix is the query (`performance.md`), not the pool size.
-4. If callers are simply more numerous than the pool, increase the pool.
-
-Restart of the pool clears any cached stale state but disconnects every in-flight call. Schedule, don't impulse.
-
-## Batch failure — what to read first
-
-Failed batches surface in `GESAEX` (Batch executions) with status `4` (error) or `3` (aborted). Click into the row:
-
-- **Output log** — the `$MAIN` script's `Print`/`Trace` output captured by the engine
-- **Error log** — anything with `ERR` written to `adxlog.log` during the run
-- **Parameters used** — what `[V]GPARAM*` actually held
-
-Also check your custom `YBATCHLOG` table (see `batch-scheduling.md`) — it captures `START` / `END` / per-step events the supervisor doesn't.
-
-If the batch is recurrent and the failure halted the schedule:
-
-1. Acknowledge the error in the queue (or the schedule won't refire).
-2. Fix the root cause.
-3. Manually trigger one run to confirm the fix.
-4. Re-enable the recurrent schedule.
-
-## Database-side post-mortem
-
-When the L4G layer is silent but data is wrong:
-
-1. **DB-side query log** — most DBAs keep a slow-query log. Find the bad write by timestamp and trace it back.
-2. **Trigger fired?** Database triggers (e.g. on `BPCUSTOMER` insertion) run outside L4G. They can't be traced from L4G, only from DB tools.
-3. **Concurrent batch ran?** Cross-reference `GESAEX` with the corruption time — a batch may have rewritten the row.
-4. **Replication delay?** If the folder uses read replicas (uncommon but possible), a write may not have propagated yet.
-
-For a row whose value is unexpected, check the audit log table (`YAUDITLOG` if you set one up — see `security-permissions.md`). Without it, the post-mortem stops at "we don't know who wrote it."
-
-## Memory / engine crash
-
-If `adxlog.log` shows entries like:
-
-```
-*** SIGSEGV in adonix at 0x...
-*** core dumped to /<runtime>/cores/
+```sql
+-- SQL Server: blocked requests and their blocker
+SELECT r.session_id, r.blocking_session_id, r.wait_type, r.wait_time,
+       s.host_name, s.program_name, s.host_process_id, t.text
+FROM sys.dm_exec_requests r
+JOIN sys.dm_exec_sessions s ON s.session_id = r.session_id
+CROSS APPLY sys.dm_exec_sql_text(r.sql_handle) t
+WHERE r.blocking_session_id <> 0;
 ```
 
-The engine itself crashed. Triage:
-
-1. **Reproduce on a clone.** Don't experiment on prod — copy the folder.
-2. **Recent changes?** A custom `.adx` compiled against an old supervisor and run against a new one is a classic trigger.
-3. **Memory pressure?** `free -m` on the host. If swap is hot, restart the engine to release leaked memory; investigate which session leaked.
-4. **Core dump.** `gdb adonix core` shows where the engine died. Useful for support tickets to Sage; not actionable in L4G alone.
-
-For systematic crashes after a patch, escalate to Sage support — they need the core, the patch chain, and a reproduction case.
-
-## Hung Syracuse / web layer
-
-When Syracuse stops responding (REST 502s, the web UI is white-screened):
-
-1. Check the Node process is alive (`ps -ef | grep node`).
-2. Check `<syracuse>/logs/syracuse.log` for stack traces.
-3. Check the JVM bridge if you use it (separate process).
-4. Restart Syracuse only after capturing the log — restarting clears the symptom but loses the diagnostic.
-
-The L4G layer is fine if `adonix` is alive; only the front falls. Test by hitting the SOAP endpoint directly with `curl` — if it answers, only Syracuse is sick.
-
-## Producing a useful incident report
-
-When handing off to support or a colleague, include:
-
-1. **Timeline** — when first noticed, when escalated, what was tried.
-2. **Scope** — affected users, affected functions, error rate.
-3. **Logs** — relevant `adxlog.log` slice, custom log slices, screenshots of `GESALI`/`GESAEX`/`GESALOCK` if relevant.
-4. **Recent changes** — patch deploys, activity-code toggles, parameter changes in the last 7 days.
-5. **Reproduction** — can it be reproduced on demand? Steps?
-6. **Patch level** — V12 patch number; matters for `version-caveats.md` cross-checks.
-7. **Workaround in place** — what's keeping prod limping while you fix.
-
-Without these, support tickets bounce for days asking the same questions.
-
-## Common pitfalls during triage
-
-- **Restarting the engine before capturing the state** — loses the lock list, the session list, the in-memory log buffer. Capture first, restart second.
-- **Killing the wrong session** — read the user code on the lock list before terminating. A lock held by a critical batch that's still progressing should not be killed.
-- **Disabling tracing during the incident** — turn it ON during a P1, not off; the trace overhead is nothing compared to the time you save.
-- **Patching without a backup** — never deploy a fix patch on the live folder without a rollback plan. Folder copy → fix → verify → swap.
-- **Trusting `adxlog.log` alone** — it rotates and truncates. Custom audit tables (`YAUDITLOG`, `YBATCHLOG`, `YINTEGRATIONLOG`) survive longer; use them.
-- **Assuming the bug is in custom code** — sometimes it's a Sage standard regression after a patch. Check the patch notes before blaming Y-code.
-
-## Post-mortem template
-
-After resolution, write a short note (one screen) and store it. Useful template:
-
-```
-INCIDENT: <one-line summary>
-DATE/TIME: <range>
-DETECTED BY: <user / monitor / customer>
-SCOPE: <affected users, functions, regions>
-ROOT CAUSE: <technical, one paragraph>
-TRIGGER: <what made the latent issue surface>
-FIX: <code change, parameter change, infrastructure change>
-DETECTION GAP: <why we didn't catch it earlier>
-PREVENTION: <what we'll do differently>
+```sql
+-- Oracle: blocked sessions and their blocker
+SELECT sid, serial#, username, program, machine, blocking_session, event, wait_class
+FROM v$session
+WHERE blocking_session IS NOT NULL;
 ```
 
-Even a five-minute write-up beats none. Patterns emerge after three or four — that's where the next refactor decision comes from.
+Then: follow the chain to the head blocker, map it to an X3 process (host/process id), check what it runs
+(request management, session list) before any kill. Also check free disk space (TRA, TMP, database logs), DB
+log/redo saturation and backups running at the same time.
 
-See also: `debugging-traces.md` (preventive tracing, supervisor trace), `code-review-checklist.md` (catch issues before they ship), `performance.md` (slow query / lock investigation), `batch-scheduling.md` (batch failure handling), `version-caveats.md` (patch-related drifts that surface as crashes), `security-permissions.md` (audit logs that survive `adxlog.log` rotation).
+## Who changed this data?
+
+- **Standard audit**: with activity code AUDIT active and the *Audit* tab of the table dictionary filled, database
+  triggers record inserts/updates/deletes (optionally before/after values) in **AUDITH**/**AUDITL**; consult them via
+  Usage > Audit > Tables / Fields, and connections via Usage > Audit > Connections. Only tables configured
+  *before* the incident are covered.
+- **Custom audit table** written by your own code (`YAUDIT`) — `audit-compliance.md`.
+- **Batch history**: compare the change time with request management start/end times.
+- **Integration log**: inbound calls that could have written the row — `web-services-integration.md`.
+
+## Incident report template
+
+```
+INCIDENT:        <one-line summary>
+DATE/TIME:       <start - end, timezone>
+DETECTED BY:     <user / monitoring / customer>
+SCOPE:           <endpoints (folders), functions, users, sites affected>
+X3 CONTEXT:      <V12 patch level, last patch applied, activity codes changed>
+EVIDENCE:        <request numbers + RQT logs, TRA files, VERSYMB / session screenshots, DB blocking output>
+TIMELINE:        <detection, escalation, actions tried with time>
+ROOT CAUSE:      <technical, one paragraph>
+TRIGGER:         <what made the latent issue surface>
+FIX:             <code / patch / parameter / infrastructure change>
+DETECTION GAP:   <why it was not caught earlier>
+PREVENTION:      <test added (unit-testing-axunit.md), monitoring, review rule>
+```
+
+## Gotchas
+
+- Restarting Syracuse or the runtime before capturing sessions, locks and logs loses the evidence.
+- Killing a session that is in the middle of a batch transaction rolls the whole transaction back — check the
+  request list first.
+- VERSYMB only shows symbol locks; an empty VERSYMB does not mean "no lock" (database row locks are invisible there).
+- Do not leave session traces, Engine trace or X3 session logs on after the incident: they cost CPU and disk.
+- Audit tables only answer for tables that were configured before the change happened.
+- Suspect standard regressions too: compare with the patch notes before blaming specific code.
+
+See also: `debugging-traces.md`, `performance.md`, `batch-scheduling.md`, `database.md`, `audit-compliance.md`,
+`web-services-integration.md`, `version-caveats.md`.
+
+## Sources
+- https://online-help.sagex3.com/erp/12/en-us/Content/FCT/VERSYMB.htm , https://online-help.sagex3.com/erp/11/en-US/FCT/VERSYMB.htm (menu)
+- https://online-help.sagex3.com/erp/12/en-us/Content/V7DEV/4gl_lock.html
+- https://online-help.sagex3.com/erp/12/en-us/Content/FCT/ASYRREQMAN.htm
+- https://online-help.sagex3.com/erp/12/en-us/Content/V7DEV/administration-reference_sessions-information.html
+- https://online-help.sagex3.com/erp/12/en-us/Content/V7DEV/administration-reference_session-infos.html
+- https://online-help.sagex3.com/erp/12/en-us/Content/V7DEV/administration-reference_x3-session-logs.html
+- https://online-help.sagex3.com/erp/12/en-us/Content/V7DEV/administration-reference_x3-session-configuration.html
+- https://online-help.sagex3.com/erp/12/en-us/Content/V7DEV/4gl_adxuid.html
+- https://online-help.sagex3.com/erp/11/en-US/OBJ/ACV_AUDIT.htm
+- https://communityhub.sage.com/sage-global-solutions/sage_x3/b/sage-x3-uk-support-insights/posts/improved-x3-session-information-in-latest-v12-patch-release (community)
+- https://www.greytrix.com/blogs/sagex3/2013/03/16/how-to-unlock-your-process-in-sage-x3/ (community)
+- https://communityhub.sage.com/sage-global-solutions/sage_x3/b/sage-x3-support-insights-ame/posts/sage-x3-performance-blueprint-optimization-troubleshooting (community)

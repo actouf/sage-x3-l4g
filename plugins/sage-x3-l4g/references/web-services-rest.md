@@ -1,236 +1,169 @@
-# REST endpoints — publishing and consuming, SData
+# Syracuse REST Web API — exposing X3 classes and representations
 
-The V12-native integration surface. Every published representation gets a generated REST API; consuming external REST APIs uses HTTP helpers and JSON parsing.
+How external systems read and update X3 through the Syracuse Web API (`/api1/`): URL anatomy, facets,
+query/filter/paging, read, create, update, delete, operations and links, authentication, responses and
+errors, and the SData legacy. The 4GL side lives in classes and representations (`v12-classes.md`,
+`v12-representations.md`); calling external APIs from X3 is in `web-services-rest-client.md`.
 
-For SOAP / AWS publishing and SOAP client patterns, see `web-services-soap.md`. For cross-cutting concerns (file exchange, TLS, integration logs, the protocol comparison), see `web-services-integration.md`.
+## Contents
+- [What is exposed](#what-is-exposed)
+- [URL anatomy](#url-anatomy)
+- [Query: list, filter, sort, page](#query-list-filter-sort-page)
+- [Read one resource](#read-one-resource)
+- [Create, update, delete](#create-update-delete)
+- [Operations and links](#operations-and-links)
+- [Authentication](#authentication)
+- [Errors and status codes](#errors-and-status-codes)
+- [SData and legacy URLs](#sdata-and-legacy-urls)
+- [Gotchas](#gotchas)
+- [Sources](#sources)
 
-## Publishing a REST endpoint (V12)
+## What is exposed
 
-The V12 way. Every published **representation** (see `v12-classes-representations.md`) gets a generated REST API under:
+The Web API is available on every representation configured in the dictionaries: there is no separate
+publication step. Sage ships read-only representations on all resources, so any module can be read;
+create/update/delete need a class and a representation whose facets allow them. A custom integration
+therefore means: custom table → class (GESACLA) → representation with the facets the partner needs →
+validation. Business rules defined in the class and representation run before saving, so the payload
+returned can differ from the one submitted.
 
-```
-GET/POST/PATCH/DELETE  /api/x3/erp/<folder>/<object>
-```
-
-### Service (non-persistent) endpoint
-
-For operations that aren't CRUD on a table — a computation, a transaction, a validation:
-
-```l4g
-##############################################################
-# YSRV_CHECK_STOCK — REST service class
-# Exposed at POST /api/x3/erp/SEED/YSRV_CHECK_STOCK
-##############################################################
-Class YSRV_CHECK_STOCK
-
-    Public Char    ITMREF(30)
-    Public Decimal QTY                   # out
-    Public Char    STATUS(20)            # out
-
-    Public Method Execute()
-        Local File ITMMASTER [ITM], STOCK [STO]
-
-        Read [ITM]ITMREF0 = this.ITMREF
-        If fstat
-            this.STATUS = "KO_UNKNOWN_ITEM"
-            this.QTY = 0
-            End 0
-        Endif
-
-        this.QTY = 0
-        For [STO] Where ITMREF = this.ITMREF
-            this.QTY += [F:STO]QTYSTU
-        Next
-        this.STATUS = "OK"
-    End 0
-
-Endclass
-```
-
-The class is wrapped in a service representation (no UI). Syracuse serializes the public fields to/from JSON.
-
-### CRUD endpoint on a business object
-
-Any V12 business-object representation is automatically exposed as REST. For example, a custom `YORDER` object → `GET/POST/PATCH/DELETE /api/x3/erp/SEED/YORDER`. Filtering, paging, and selection are handled via Syracuse query parameters.
-
-`v12-classes-representations.md` covers the class → representation → page wiring.
-
-### Calling a REST endpoint
+## URL anatomy
 
 ```
-POST /api/x3/erp/SEED/YSRV_CHECK_STOCK HTTP/1.1
-Authorization: Bearer <syracuse-token>
+https://<server>:<port>/api1/x3/erp/<ENDPOINT>/<CLASS>?representation=<REP>.$<facet>&<options>
+https://<server>:<port>/api1/x3/erp/<ENDPOINT>/<CLASS>('<KEY>')?representation=<REP>.$<facet>
+```
+
+| Part | Meaning |
+|---|---|
+| `api1` | Web API version; stateless web-service mode |
+| `x3/erp` | Application / contract for X3 entities (`syracuse/collaboration/syracuse` for platform entities such as SOAP pools or endpoints) |
+| `<ENDPOINT>` | Syracuse endpoint = one X3 folder |
+| `<CLASS>` | Class code (standard such as `BPCUSTOMER`, or custom) |
+| `('<KEY>')` | Primary key; composite key parts joined with `~` |
+| `representation=<REP>.$<facet>` | Mandatory in api1; `<REP>` must be a representation of `<CLASS>` or the call fails |
+
+Facets: `$query` (list), `$details` (one record), `$edit` (update/delete), `$create` (creation),
+`$lookup` (selection), `$summary` (summary view).
+
+## Query: list, filter, sort, page
+
+```
+GET /api1/x3/erp/SEED/BPCUSTOMER?representation=BPCUSTOMER.$query&count=50
+    &where=left(BPCNAM,4) eq 'Test'&orderBy=BPCNAM desc,BPCNUM asc
+```
+
+| Option | Effect |
+|---|---|
+| `count=N` | Page size (default 20); the server may cap it — read `$itemsPerPage` |
+| `where=<predicate>` | Filter in api1 syntax: `eq`, functions such as `left(...)`, quoted strings |
+| `orderBy=<prop> asc\|desc,...` | Only properties present on the query facet |
+| `key=gt.<value>` | Keys greater than a value; used by paging links |
+
+The response is an envelope: `$itemsPerPage`, `$resources` (the rows), `$links` (`$first`, `$prev`,
+`$next`, `$last`, plus representation links). Page by following `$links.$next.$url` until `$next` is
+absent — never rebuild the URL yourself. URL-encode spaces and quotes in `where` / `orderBy`.
+
+## Read one resource
+
+```
+GET /api1/x3/erp/SEED/BPCUSTOMER('C0001')?representation=BPCUSTOMER.$details
+```
+
+The payload carries `$uuid`, `$etag`, the properties, child collections as embedded arrays (each line
+with its own `$uuid`), and references as two fields: the key (`CUR`) and a `_REF` object (`CUR_REF`
+with `$title`, ...). Other `$` properties are internal: ignore them.
+
+## Create, update, delete
+
+| Action | Request | Success |
+|---|---|---|
+| Template | `GET .../<CLASS>/$template?representation=<REP>.$create` | Defaults from the dictionaries |
+| Metadata | `GET .../$prototypes('<REP>.$edit')` | `$properties` with types, lengths, mandatory flags |
+| Create | `POST .../<CLASS>?representation=<REP>.$create` + JSON body | 201, `Location` header = new resource URL |
+| Update | `PUT .../<CLASS>('<KEY>')?representation=<REP>.$edit` + partial JSON body | 200, new state returned |
+| Delete | `DELETE .../<CLASS>('<KEY>')?representation=<REP>.$edit` | 200 |
+
+The template step is optional; remove its `$` keys before posting. An update body may contain only the
+changed properties; to touch existing lines, send their `$uuid` (read with `$edit` first). Sage's
+API-requests page also shows creation as a POST on `.$edit`. ETag-based concurrency control from SData
+2.0 is not available in this Web API.
+
+```
+POST /api1/x3/erp/SEED/YSOT?representation=YSOT.$create
+Authorization: Basic <base64(login:password)>
 Content-Type: application/json
 
-{ "ITMREF": "ITM001" }
+{"SOHNUM":"SO0001","COURIER":"DHL","STATUS":"PICKED"}
 ```
 
-Response:
+## Operations and links
 
-```json
-{
-  "ITMREF": "ITM001",
-  "QTY": 42.5,
-  "STATUS": "OK"
-}
-```
+Operations declared on the class (dictionary "Methods and Operations") are placed on the
+representation as record links; the query feed may return representation-specific links next to the
+paging links. The integration guide does not publish a URL pattern for operations: read the link
+`$url` from `$links` (or from `$prototypes`) instead of hard-coding one. Operation code goes in the
+class script (`v12-classes.md`).
 
-### Authentication
+## Authentication
 
-- **Basic auth** — user + password; fine for internal, avoid for the internet.
-- **OAuth2 / Syracuse token** — standard for external integrations.
-- Endpoint ACLs are set per role in Syracuse — check **Administration → Security → Roles → ACL** when a 403 shows up.
+| Mode | Where | Notes |
+|---|---|---|
+| Basic | On-premise only | `Authorization: Basic base64(user:password)`; HTTPS mandatory in production; the Syracuse user must use basic authentication and be mapped to an X3 user with a suitable profile |
+| Client certificate | On-premise only, HTTPS only | No header; the login is the certificate subject's common name; the certificate is declared on the host |
+| OAuth2 | Online (only mode) and on-premise | Bearer token; Syracuse needs `auth: ["oauth2","bearer"]` |
 
-See `security-permissions.md` for the role / function-profile layer that backs Syracuse ACLs.
+Modes are enabled in the `session.auth` array of Syracuse's `nodelocal.js` (for example
+`auth: ["basic", "oauth2"]`). With `/api1/`, every call carries the `Authorization` header, no session
+cookie is used, and sessions come from a dedicated short-timeout pool. Connected applications (client
+ID + secret used to sign JWT tokens; Administration > Administration > Settings > Authentication >
+Connected applications per a Sage partner deck) are not mentioned by the api1 integration pages: check
+your patch level before relying on them for api1. See `security-permissions.md` for profiles.
 
-### Best practices for REST services
+## Errors and status codes
 
-- **Return a status field** in the response (`OK`, `KO_<reason>`) — partners parse that more reliably than HTTP codes alone.
-- **Validate every input field** before touching the database — services bypass entry-transaction checks.
-- **Wrap DB writes in `If adxlog`** transactional idiom (`database.md`).
-- **Don't call `Infbox` / `Errbox`** — there's no user; the popup XML may surface to the partner and crash their parser.
-- **Log every invocation** to a dedicated integration table.
-- **Version explicitly** — a `_V2` service rather than a breaking signature change. Run both during the deprecation window.
-- **Idempotency keys** — accept a partner-supplied correlation id, check it before acting, return the prior result on retry.
+- 4xx / 5xx: class, representation or syntax problem (or authentication).
+- 200 on a read does **not** prove the record exists: test for `$diagnoses`, for example
+  `{"$diagnoses":[{"$severity":"error","$message":"721 : Record does not exist"}]}`.
+- 201 on a create only proves the class, representation and body were accepted: success is a payload
+  without an error `$diagnoses` entry (Sage's sample ends with a `$links.$save` section).
+- Raise business errors from class code with `ASETERROR` (`v12-classes.md`); never with `Infbox`.
 
-## Consuming an external REST API from X3
+## SData and legacy URLs
 
-The standard way in V12: the `WEBSER` / `HTTP` helper subprograms shipped with the supervisor. Exact script name depends on version; on recent V12 it's `func HTTPREST.*` or a dedicated class.
+The Web API is based on SData 2.0 with differences: URLs start with `/api1/` instead of `/sdata/`, and
+the representation parameter is mandatory. Sage states that `/sdata/` "must no longer be used in
+webservice mode" — it is meant for interactive sessions and consumes a token, even if it seems to work.
+Migrate old clients to `/api1/`.
 
-### Generic pattern
+## Gotchas
 
-**Note on script names below:** the X3 supervisor does not expose a single fixed HTTP helper — different V12 patch levels ship `WEBSER`, `HTTPREQ`, or nothing at all (you write a thin wrapper over `System curl` or over the JVM bridge). The examples below call `HTTPPOST` / `HTTPGET` from a **user-defined** `YHTTP` script — substitute with whatever wrapper exists in your folder. The pattern (args, status handling) is what matters, not the exact script name.
+- Representation not belonging to the class → error; api1 requires both names.
+- `count` is a request, not a guarantee: loop on `$links.$next` instead of assuming page sizes.
+- Composite keys use `~`, not commas.
+- Updating lines without their `$uuid` creates or mismatches lines.
+- Online deployments: OAuth2 only, no Basic, no certificates.
+- Test interactively: a browser redirects to the login page first; Postman needs an `Authorization`
+  header.
+- Log inbound calls you handle in custom code through `YINTLOG_WRITE`
+  (`web-services-integration.md`).
 
-```l4g
-Local Char URL(500), BODY(2000), RESP(10000)
-Local Integer HTTPCODE
+See also: `web-services-integration.md`, `web-services-soap.md`, `v12-classes.md`,
+`v12-representations.md`, `security-permissions.md`.
 
-URL = "https://api.partner.example/inventory/ITM001"
-BODY = '{"apikey":"ABC","quantity":10}'
-
-Call HTTPPOST(URL, BODY, "application/json", RESP, HTTPCODE) From YHTTP
-
-If HTTPCODE = 200
-    # parse RESP as JSON — see below
-Else
-    Call ECRAN_TRACE("HTTP " + num$(HTTPCODE) + ": " + RESP, 2) From GESECRAN
-Endif
-```
-
-### Parsing JSON
-
-Two common approaches in V12:
-
-**1. Standard `func AFNC.JSON*` helpers** (present in most V12 installs):
-
-```l4g
-Local Char RESP(10000), VAL(200)
-# RESP contains: {"status":"OK","qty":42}
-VAL = func AFNC.JSONGET(RESP, "status")     # "OK"
-Local Integer QTY
-QTY = val(func AFNC.JSONGET(RESP, "qty"))   # 42
-```
-
-**2. Full DOM via the Syracuse class `ASYSTEM.ParseJson`** (newer V12 patch levels).
-
-If neither is available or your folder is locked to an older supervisor, write a minimal parser in L4G using `instr`, `mid$`, and `pat`. Keep it to a small helper class, don't inline it.
-
-### Building JSON
-
-```l4g
-Local Char BODY(2000)
-BODY = '{"itmref":"' - [L]ITMREF - '","qty":' + num$([L]QTY) + '}'
-```
-
-Escape any user-supplied value (`"`, backslash, newlines) or your caller will send unparseable bodies. A minimal helper:
-
-```l4g
-Funprog YJSON_ESC(S)
-Value Char S()
-    S = replace$(S, "\", "\\")
-    S = replace$(S, chr$(34), "\" + chr$(34))
-    S = replace$(S, chr$(13), "\r")
-    S = replace$(S, chr$(10), "\n")
-    S = replace$(S, chr$(9), "\t")
-End S
-```
-
-Route every interpolation through `YJSON_ESC` for any field that could contain user-entered text.
-
-### Authenticating outbound REST calls
-
-| Mode | How |
-|------|-----|
-| API key in header | Add an `Authorization: Bearer <key>` (or vendor-specific) HTTP header. Build a wrapper `YHTTPAUTH` that pulls the key from `GESADP`. |
-| OAuth2 client credentials | Pre-flight `POST /token` with `client_id` + `client_secret`, cache the access token until expiry, refresh on 401. |
-| Basic auth | `Authorization: Basic <base64(u:p)>`; rarely used for internet APIs but common in B2B. |
-
-Pull credentials from encrypted parameters; never inline. See `security-permissions.md`.
-
-### Pagination, retry, timeout
-
-- **Pagination** — most APIs return a `next` cursor or a `Link: <…>; rel="next"` header. Loop until exhausted; cap loop iterations to prevent infinite-page bugs.
-- **Retry** — on 5xx or transient network failure, retry with exponential backoff (1s, 2s, 4s, 8s, then give up). On 4xx, do not retry.
-- **Timeout** — HTTP wrappers default to 30s. Configurable per call where supported. Long partner APIs need explicit overrides.
-
-### Partner API — full pattern
-
-```l4g
-##############################################################
-# YFETCH_INVENTORY — pull inventory from partner API
-##############################################################
-Funprog YFETCH_INVENTORY(SKU)
-Value Char SKU()
-
-Local Char    URL(500), RESP(10000), TOKEN(500)
-Local Integer HTTPCODE, TRY
-
-# Get cached or refresh token
-TOKEN = func YOAUTH.GET_TOKEN()
-
-URL = func AFNC.PARAMG("YINT", "PARTNER", "URL") - "/inventory/" - SKU
-
-For TRY = 1 To 4
-    Call HTTPGET_AUTH(URL, TOKEN, RESP, HTTPCODE) From YHTTPAUTH
-    If HTTPCODE = 200 : Exitfor : Endif
-    If HTTPCODE = 401              # token expired; refresh once
-        TOKEN = func YOAUTH.REFRESH()
-        Continue
-    Endif
-    If HTTPCODE >= 500
-        Sleep 2 ** TRY              # exponential backoff
-        Continue
-    Endif
-    # 4xx other than 401 — fail fast
-    End ""
-Next
-
-If HTTPCODE <> 200
-    Call ECRAN_TRACE("Partner API " + num$(HTTPCODE) + ": " + RESP, 2) From GESECRAN
-    End ""
-Endif
-
-End RESP
-```
-
-## SData
-
-V7/V12 carries SData endpoints forward for backwards compatibility:
-
-```
-GET /sdata/x3/erp/SEED/BPCUSTOMER('BP001')
-```
-
-Returns an Atom XML feed. New code should prefer the REST API — SData is retained for apps built against V7 and earlier integrations. A `GET` against an SData URL on V12 still works, but for new clients reach for `/api/x3/erp/...` instead.
-
-## REST-specific gotchas
-
-- **Self-signed certs** — the runtime rejects them by default; configure the trust store via Syracuse rather than disabling TLS verification.
-- **Folder context in REST** — the URL contains the folder (`SEED`). Make sure the Syracuse user is bound to that folder, or you'll get a cryptic 500.
-- **Encoding** — REST default is UTF-8. Older partner APIs may serve ISO-8859-1 — check `Content-Type` before parsing.
-- **Payload size** — the REST layer buffers the whole body in memory; don't pass megabytes through a single call, chunk or use file exchange (see `web-services-integration.md`).
-- **OAuth token expiry** — cache, but always handle 401 by refreshing once and retrying. Don't retry on every call (rate-limited APIs ban you).
-- **HTTP headers case sensitivity** — most partner servers treat headers case-insensitively, but a few enforce case (e.g. `X-API-Key` vs `x-api-key`). Match what the docs show literally.
-- **JSON field nesting** — `func AFNC.JSONGET(RESP, "rates.USD")` works on most patches with dotted paths, but check on yours; older shipping versions only support flat keys.
-
-See also: `web-services-integration.md` (overview, file exchange, TLS, integration logging), `web-services-soap.md` (SOAP server and SOAP client), `v12-classes-representations.md` (representation → REST endpoint wiring), `security-permissions.md` (auth, ACL, OAuth credential storage), `version-caveats.md` (`HTTPPOST` / `AFNC.JSON*` availability).
+## Sources
+- https://online-help.sagex3.com/erp/12/en-us/Content/V7DEV/integration-guide_ws-overview.html
+- https://online-help.sagex3.com/erp/12/en-us/Content/V7DEV/integration-guide_ws-query.html
+- https://online-help.sagex3.com/erp/12/en-us/Content/V7DEV/integration-guide_ws-read-details.html
+- https://online-help.sagex3.com/erp/12/en-us/Content/V7DEV/integration-guide_ws-create.html
+- https://online-help.sagex3.com/erp/12/en-us/Content/V7DEV/integration-guide_ws-update.html
+- https://online-help.sagex3.com/erp/12/en-us/Content/V7DEV/integration-guide_ws-delete.html
+- https://online-help.sagex3.com/erp/12/en-us/Content/V7DEV/integration-guide_ws-basic-authentication.html
+- https://online-help.sagex3.com/erp/12/en-us/Content/V7DEV/integration-guide_ws-certificates-authentication.html
+- https://online-help.sagex3.com/erp/12/en-us/Content/V7DEV/integration-guide_ws-oauth2-authentication.html
+- https://online-help.sagex3.com/erp/12/en-us/Content/V7DEV/integration-guide_ws-sdata-differences.html
+- https://online-help.sagex3.com/erp/12/en-us/Content/V7DEV/api-guide_api-requests.html
+- https://online-help.sagex3.com/erp/12/en-us/Content/V7DEV/developer-guide_representations.html
+- https://online-help.sagex3.com/erp/12/en-us/Content/V7DEV/developer-guide_classes-dictionaries.html
+- https://online-help.sagex3.com/erp/12/en-us/Content/V7DEV/administration-reference_connected-applications.html
+- https://communityhub.sage.com/cfs-file/__key/communityserver-discussions-components-files/40/7848.04-_2D00_-REST-Web-Services.pdf (Sage BP-day deck, community-hosted: facet/verb table, `$lookup`, `$summary`, connected-applications menu path)

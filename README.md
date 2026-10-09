@@ -1,125 +1,139 @@
 # sage-x3-l4g
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-0.5.1-blue.svg)](CHANGELOG.md)
+[![Release](https://img.shields.io/github/v/release/actouf/sage-x3-l4g)](https://github.com/actouf/sage-x3-l4g/releases/latest)
 [![Validate skill](https://github.com/actouf/sage-x3-l4g/actions/workflows/validate.yml/badge.svg)](https://github.com/actouf/sage-x3-l4g/actions/workflows/validate.yml)
 [![Docs](https://img.shields.io/badge/docs-actouf.github.io-brightgreen)](https://actouf.github.io/sage-x3-l4g/)
 
-> 🇬🇧 Claude Skill for writing, reviewing, and debugging Sage X3 V12 L4G code — classes, representations, REST, workflows, reports, Y/Z conventions, ready-to-use recipes.
->
-> 🇫🇷 Skill Claude pour écrire, relire et déboguer du code Sage X3 V12 L4G — classes, représentations, REST, workflows, états, conventions Y/Z et recettes prêtes à l'emploi.
+> Claude skill for writing, reviewing, and debugging Sage X3 V12 L4G code — dictionary classes and class scripts, representations, Classic objects and entry points, transactions, Syracuse REST and SOAP, imports, workflows, batch, AXUNIT tests.
 
-Gives Claude the vocabulary, idioms, and conventions of Sage X3 V12 L4G (4GL / X3 script / Adonix) so it produces correct code on the first try. V12-focused — Classic (V6) syntax covered where it's still running in V12.
+_[Version française → README_FR.md](README_FR.md)_
 
-**[Browse the rendered references → actouf.github.io/sage-x3-l4g](https://actouf.github.io/sage-x3-l4g/)** — same content as below, laid out for navigation without cloning.
+Gives Claude the vocabulary, idioms and conventions of Sage X3 L4G (4GL / X3 script / Adonix) so it writes code that uses real keywords and real supervisor APIs. V12-focused; Classic constructs are covered where they still run in V12.
+
+**Every reference cites the Sage online-help pages it is based on** (a `## Sources` section at the end of each file), and the validation script rejects identifiers that do not exist in X3. The content is checked against Sage's documentation, not compiled on a live folder — see [Limits](#limits).
+
+**[Browse the rendered references → actouf.github.io/sage-x3-l4g](https://actouf.github.io/sage-x3-l4g/)**
 
 ## What's inside
 
 **Entry point**
-- `SKILL.md` — mental model, triggering rules, V12-vs-Classic idioms, a canonical transactional subprogram
+- `SKILL.md` — when to use, verification discipline, mental model (prefixes, `fstat` / `adxuprec`, one transaction level), V12-vs-Classic idioms, canonical transactional Funprog
 
-**Core language and conventions**
-- `references/language-basics.md` — variables, scopes (`[L]`/`[V]`/`[S]`), types, control flow, subprograms, `Onerrgo`
-- `references/database.md` — `Read`/`Readlock`/`Write`/`For`, the `If adxlog` nested-transaction pattern, `UPDTICK`, `Link`, embedded SQL
-- `references/builtin-functions.md` — strings, dates, `pat`, `System`, sequential files, file info (`filpath`, `filinfo`)
-- `references/conventions-and-naming.md` — the Y/Z rule, 3-letter aliases, message chapters, folder layout
-- `references/common-patterns.md` — core / Classic recipes (transactions, grids, error handling, action-on-field, sub-prog params, batch)
-- `references/common-patterns-v12.md` — V12 recipes (class CRUD with `UPDTICK`, REST service, external REST consumption, import hook, scheduled batch + email)
+**Core language**
+- `references/language-basics.md` — types, declarations, parameter modes, control flow, `Break`, subprograms, `Gosub`, `Onerrgo` / `Resume`
+- `references/database.md` — `Read` / `For` / `Filter` / `Link`, `Update … With`, `Readlock`, `Rewritebykey` and UPDTICK, `Execsql`, fstat / adxuprec, the transaction idiom
+- `references/builtin-functions.md` — string, date, number and system functions (`format$`, `gdat$`, `instr`, `vireblc`, `ctrans`, `pat`, `filinfo`, `System`)
+- `references/sequential-files.md` — `Openi` / `Openo` / `Openio`, `Rdseq` / `Wrseq` / `Getseq` / `Putseq`, `Iomode`, encodings, `filpath`
+- `references/conventions-and-naming.md` — X / Y / Z prefixes, activity codes, message chapters, script and table naming
+- `references/function-codes.md` — verified list of GESxxx functions, and codes that do not exist
 
-**UI — Classic and V12**
-- `references/screens-and-masks.md` — legacy V6/Classic masks (`[M:...]`, `Inpbox`, standard actions, grids) still running in V12
-- `references/v12-classes-representations.md` — V12-native: `Class`/`Method`/`this`, representations, pages, business objects, REST surface
+**Object models and UI**
+- `references/v12-classes-representations.md` — router: classes vs representations vs Classic objects, Classic → V12 migration
+- `references/v12-classes.md` — class dictionary, class scripts (`$PROPERTIES` / `$EVENTS` / `$METHODS` / `$OPERATIONS`), rules, events, instances, `fmet`, `ASETERROR`
+- `references/v12-representations.md` — representations, facets, representation scripts and events
+- `references/classic-objects.md` — Classic objects: specific `$ACTION` scripts, creation / modification actions, `OK` / `GOK`
+- `references/entry-points.md` — entry points (GESAPE, `GPOINT`, `GPE`) to customise standard processes without modifying them
+- `references/screens-and-masks.md` — Classic masks, `[M:...]`, field actions, `mkstat`, deprecated screen instructions
 
-**Integration and operations**
-- `references/web-services-integration.md` — overview and router: protocol comparison, file exchange, integration logs, cross-cutting gotchas
-- `references/web-services-soap.md` — publishing classic SOAP from X3 (`GESAWE` / `GESAPO`, parameter grid, AWS pool)
-- `references/web-services-soap-client.md` — calling external SOAP services: envelope, WS-Security, parsing, fault detection
-- `references/web-services-rest.md` — publishing REST (Syracuse), consuming external REST APIs, JSON, OAuth, SData
-- `references/imports-exports.md` — IMP/EXP templates (`LECFIC`/`EXPFIC`), custom import hooks, delta sync patterns
-- `references/reports-printing.md` — launching reports via `IMPRIM`, destinations (`GESADI`), Crystal / native states, Excel exports
-- `references/workflow-email.md` — workflow rules (`GESAWR`), templates, recipients, sending emails (`ENVMAIL`), HTML bodies
-- `references/debugging-traces.md` — `ECRAN_TRACE`, `stat1`/`funfat`, supervisor tracing, integration logging
-- `references/performance.md` — indexes, `Order By Key`, `Link` joins, transaction granularity, profiling, anti-patterns
-- `references/security-permissions.md` — `GESAUT` / `GACTION` / `GESAFP`, ACL on services, credential storage, audit logging, injection prevention
-- `references/batch-scheduling.md` — `GESABA` / `GESAPL`, recurrent vs one-shot, calendars, dependencies, monitoring, restart safety
-- `references/personalisation-activity.md` — activity codes (`GESACV`, `#Active`), personalisation (`GESAPE`), folder hierarchy, patch generation/import
-- `references/localization.md` — messages (`mess`, `GESAML`), `[V]GLANGUE`, date / time formats, decimal separators, multi-language templates
-- `references/localization-formats.md` — currencies (`GESCUR`, `GDEV.DEVISE`), country addresses (`GESACO` / `FORMAT_ADDR`), RTL / CJK / UTF-8
-- `references/data-migration.md` — staging tables, validation / load / reconcile / cutover, dual-write, schema migration, folder consolidation
-- `references/diagnostics-postmortem.md` — reading `adxlog.log`, stuck locks, hung AWS pool, batch failures, engine crashes, incident report template
-- `references/audit-compliance.md` — audit log pattern, GDPR access / erasure / portability, financial audit trail, retention, consent
+**Integration**
+- `references/web-services-integration.md` — router: REST vs SOAP vs outgoing HTTP vs files, integration log, publishing checklist
+- `references/web-services-rest.md` — exposing X3 through Syracuse REST (`/api1/...`, representations, facets, paging, authentication)
+- `references/web-services-rest-client.md` — calling external HTTP / REST APIs (`ASYRRESTCLI.EXEC_REST_WS`), JSON with `ParseInstance`
+- `references/web-services-soap.md` — publishing Classic SOAP web services (GESASU, GESAWE, Syracuse pools, callContext)
+- `references/web-services-soap-client.md` — calling an external SOAP service from X3: envelope, escaping, parsing, faults
+- `references/imports-exports.md` — import / export templates (GESAOE), running them from code, file exchange patterns
+- `references/reports-printing.md` — reports dictionary, destinations, printing from code
+- `references/workflow-email.md` — workflow rules (GESAWA), allocation rules, data models, sending e-mail (`ASEND_MAIL`)
 
-**Meta**
-- `references/code-review-checklist.md` — structured pass before approving a `.src` / `.trt` change, red flags ranked by blast radius
-- `references/version-caveats.md` — which primitives / helpers / URLs drift across V12 patch levels, what to verify before copy-pasting to production
+**Operations**
+- `references/batch-scheduling.md` — batch tasks (GESABT), recurring tasks (GESABA), calendars, request monitoring, restart safety
+- `references/personalisation-activity.md` — activity codes (GESACV), folder hierarchy, patches (APATCH / PATCH), personalisation
+- `references/localization.md` — messages and `mess()`, connection language, date and number formatting
+- `references/localization-formats.md` — currencies, countries and address formats, character sets
+- `references/data-migration.md` — staging tables, idempotent loaders, reconciliation, cutover
+- `references/debugging-traces.md` — log files (`ALOG` class in V7+ code, `OUVRE_TRACE` / `ECR_TRACE` in Classic code), engine log, profiler, error variables, debugger
+- `references/diagnostics-postmortem.md` — production incidents: locks, failed batches, logs, incident report template
+
+**Quality**
+- `references/performance.md` — index-driven access, `Link` vs N+1 reads, `Columns`, transaction size, set-based SQL
+- `references/security-permissions.md` — function profiles, access control, web-service authentication, secrets, injection
+- `references/audit-compliance.md` — audit table pattern, sequence numbers, GDPR access / erasure / portability, retention
+- `references/unit-testing-axunit.md` — AXUNIT test suites (`QLF*` scripts), assertions, running tests
+- `references/code-review-checklist.md` — structured review pass, red flags ranked by blast radius
+- `references/common-patterns.md` — Classic / core recipes
+- `references/common-patterns-v12.md` — V12 recipes
+- `references/version-caveats.md` — version-dependent behaviour and what to verify on your folder
+
+**Examples** (`plugins/sage-x3-l4g/examples/`, shipped with the skill)
+
+| File | Topic |
+|------|-------|
+| [`YACCLIB.src`](plugins/sage-x3-l4g/examples/YACCLIB.src) | Transactional YTRANSFER Funprog and ALOG negative-balance check |
+| [`QLFYAC_TRANSFER.src`](plugins/sage-x3-l4g/examples/QLFYAC_TRANSFER.src) | AXUNIT test suite for YTRANSFER |
+| [`YTRFPOST.src`](plugins/sage-x3-l4g/examples/YTRFPOST.src) | Batch posting of staging rows, per-row transactions, ALOG log |
+| [`SPEYCU.src`](plugins/sage-x3-l4g/examples/SPEYCU.src) | Classic object actions refusing creation or modification with OK = 0 |
+| [`YSUBITM.src`](plugins/sage-x3-l4g/examples/YSUBITM.src) | SUBITM entry point BEFWRIITF writing an audit row, GOK = 0 |
+| [`YCONTRACT_CSPE.src`](plugins/sage-x3-l4g/examples/YCONTRACT_CSPE.src) | V12 class script: CONTROL rule, control events, ARET_VALUE method |
+| [`YRESTRATE.src`](plugins/sage-x3-l4g/examples/YRESTRATE.src) | Outgoing REST call with EXEC_REST_WS, JSON parsing, integration log |
+| [`YIMPLAUNCH.src`](plugins/sage-x3-l4g/examples/YIMPLAUNCH.src) | Silent import with IMPORTSIL and archiving of the imported file |
 
 ## Install
 
-### Option 1 — Claude.ai (web / mobile)
-
-1. Click the green **Code ▾** button on this repo page → **Download ZIP**
-2. The downloaded file is `sage-x3-l4g-main.zip` (or similar)
-3. Extract it, then re-zip **only the `plugins/sage-x3-l4g/` folder** so that `SKILL.md` is at the root of the archive
-4. Rename the new zip to `sage-x3-l4g.skill`
-5. In Claude.ai go to **Settings → Capabilities → Skills → Upload skill** and select the file
-
-### Option 2 — Claude Desktop
-
-1. Open the Desktop app → sidebar **Customize** → **Skills**
-2. Next to *Personal plugins*, click the **+** button
-3. Paste `<your-github-user>/sage-x3-l4g` and click **Sync**
-4. Click **Install** on the `sage-x3-l4g` entry
-
-### Option 3 — Claude Code (CLI / VS Code extension)
+### Claude Code (CLI, VS Code, JetBrains)
 
 ```bash
 claude plugin marketplace add actouf/sage-x3-l4g
 claude plugin install sage-x3-l4g@sage-x3-l4g
 ```
 
+Or from a session: `/plugin marketplace add actouf/sage-x3-l4g`, then `/plugin install sage-x3-l4g@sage-x3-l4g`. To update later: `claude plugin update sage-x3-l4g@sage-x3-l4g` (auto-update is off by default for third-party marketplaces; you can turn it on in `/plugin`).
+
+### Claude Desktop
+
+**Customize → Plugins → Personal plugins → +** → add the marketplace `actouf/sage-x3-l4g`, then install `sage-x3-l4g`.
+
+### Claude.ai (web)
+
+1. Download `sage-x3-l4g.zip` from the [latest release](https://github.com/actouf/sage-x3-l4g/releases/latest/download/sage-x3-l4g.zip) (it contains the `sage-x3-l4g/` skill folder).
+2. In Claude.ai: **Customize → Skills → + → Upload a skill**, and pick the zip.
+
 ## Using the skill
 
-The skill is designed to auto-trigger. Just ask Claude normally:
+The skill triggers on its own. Ask Claude normally:
 
-- "Écris une classe V12 qui réserve du stock sur un article"
-- "Publie ce Subprog comme web service REST"
+- "Écris un Funprog qui transfère un montant entre deux comptes, appelable dans ou hors transaction"
+- "In my V12 class YCONTRACT, refuse creation when ENDDAT < STRDAT"
+- "Ajoute un contrôle à la création d'un client sans toucher au standard"
+- "Call an external REST API from X3 and read a value from the JSON response"
 - "Relis ce script L4G et dis-moi ce qui cloche"
-- "Comment on peuple un tableau à partir d'un fichier CSV en L4G ?"
-- "C'est quoi la différence entre `Read` et `Readlock` en L4G ?"
-- "Comment on appelle un état Crystal depuis une action d'écran ?"
-- "Règle de workflow qui envoie un mail au manager quand une commande > 10000 EUR est validée"
-
-Claude will consult the relevant reference files automatically.
+- "Write an AXUNIT test for my YTRANSFER Funprog"
 
 ## FAQ
 
 **V12 or V7? Is V6 covered?**
-The skill targets V12 as its primary — examples use V12 classes and representations. V7 shares most of the syntax, so it works well. V6/Classic is covered only where it still runs unchanged in V12 (masks, `Inpbox`, SOAP web services). Pure V6 patterns with no V12 equivalent are not prioritized.
+V12 is the primary target; V7 shares the same class / representation model. Classic constructs (masks, `$ACTION` object scripts, SOAP) are covered because they still run in V12. Pure V6 patterns are not.
 
 **Why check `fstat` instead of using exceptions?**
-The X3 runtime does not raise exceptions for database errors — it sets `[S]fstat`. Skipping the check produces silent bugs (lost writes, stuck locks). The skill emphasizes this because it's the #1 incident root cause in production.
+Database and file instructions don't raise exceptions: they set `[S]fstat`, and `Update` / `Delete … Where` also set `[S]adxuprec`. An `Update` on a missing row succeeds with zero rows. Skipping these checks produces silent bugs.
 
-**Which V12 patch level is the skill validated against?**
-Patterns here reflect V12 patch 26+ (2024). Some supervisor signatures (`ENVMAIL`, `HTTPPOST`, `AFNC.JSONGET`) drift between patches — verify your folder's standard library before coding. File an issue if you spot a divergence.
+**Which patch level?**
+References follow the V12 online help and say so when a feature is version-dependent (for example native JSON parsing). Verify on your folder before shipping; `version-caveats.md` lists what to check.
 
 **Can examples mix French and English?**
-Yes — real X3 codebases mix both (business comments in French, English identifiers). The skill reflects that reality.
+Yes — real X3 codebases do.
 
-**Why IMP/EXP templates over hand-rolled parsers?**
-Templates are dictionary-driven: automatic validation, traced rejects, ACL-respecting, survive patches. Hand-rolled parsers drift. The skill recommends templates by default and keeps manual parsing for genuinely unstructured formats. See `imports-exports.md`.
+**Where do I report a mistake?**
+On [GitHub issues](https://github.com/actouf/sage-x3-l4g/issues), with the source or the V12 patch level that contradicts the reference.
 
-**Where do I file bugs / feature requests?**
-On [GitHub issues](https://github.com/actouf/sage-x3-l4g/issues) — please include your V12 patch level when reporting a behavioral divergence.
+## Limits
+
+- No live X3 folder is involved: examples are checked against the documentation, not compiled. Compile them in your sandbox before use.
+- Supervisor routines documented only by the community are marked *(community-reported)*.
 
 ## Contributing
 
-Issues and PRs welcome — see [CONTRIBUTING.md](CONTRIBUTING.md) for style guide, local testing flow, and PR process. Especially valuable:
-
-- Real-world V12 patterns I've missed
-- Version-specific quirks (patches where a standard signature changed)
-- Additional common-pattern recipes
-- Corrections when the runtime's behaviour differs from the reference docs
-- Translations of user-facing examples
+Issues and PRs welcome — see [CONTRIBUTING.md](CONTRIBUTING.md) for sources policy, style, local testing (`claude --plugin-dir`, evals) and the release process.
 
 ## License
 
@@ -127,4 +141,4 @@ MIT — use, modify, and redistribute freely.
 
 ## Credits
 
-Built with references from the official [Sage X3 online help](https://online-help.sagex3.com/), [L.V. Expertise X3](https://lvexpertisex3.com/), and the [Sage Community Hub](https://communityhub.sage.com/). Not affiliated with or endorsed by Sage.
+Built from the official [Sage X3 online help](https://online-help.sagex3.com/), [L.V. Expertise X3](https://lvexpertisex3.com/), and the [Sage Community Hub](https://communityhub.sage.com/). Not affiliated with or endorsed by Sage.

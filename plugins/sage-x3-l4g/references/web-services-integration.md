@@ -1,91 +1,132 @@
-# Web services and integration — overview
+# Web services and integration — router
 
-Cross-cutting integration concerns and a router into the protocol-specific files. Read this first when you need to choose between SOAP and REST, or when the question is about file exchange, TLS, or where to log.
+Start here for any integration question: pick the surface, then open the protocol file. This file also
+owns the single integration-log table (`YINTLOG`) that every inbound and outbound call writes to, the
+cross-cutting gotchas, and the go-live checklist.
 
-For the protocol mechanics, follow the link:
+## Contents
+- [Pick the surface](#pick-the-surface)
+- [The integration log table](#the-integration-log-table)
+- [Gotchas](#gotchas)
+- [Go-live checklist](#go-live-checklist)
+- [Sources](#sources)
 
-| Topic | File |
-|-------|------|
-| Publishing a SOAP / AWS service, calling an external SOAP service | `web-services-soap.md` |
-| Publishing a REST endpoint, consuming an external REST API, SData | `web-services-rest.md` |
+## Pick the surface
 
-## The three integration surfaces in V12
+| Direction | Need | Mechanism | Read |
+|---|---|---|---|
+| In | Read any entity; create/update entities built on classes and representations | Syracuse Web API, JSON: `/api1/x3/erp/<ENDPOINT>/<CLASS>?representation=<REP>.$<facet>` | `web-services-rest.md` |
+| In | Call a Classic object or a 4GL subprogram | Classic SOAP (`CAdxWebServiceXmlCC`, RPC/encoded) through a Syracuse Classic SOAP pool | `web-services-soap.md` |
+| Out | Call an external JSON/REST API | `func ASYRRESTCLI.EXEC_REST_WS` / `EXEC_REST_WSCLB` + Syracuse "Outgoing REST web services" record | `web-services-rest-client.md` |
+| Out | Call an external SOAP/XML service | `func ASYRWEBSER.EXEC_HTTP` with a hand-built envelope (no dedicated SOAP client is documented) | `web-services-soap-client.md` |
+| Both | Batch files | Import/export templates, sequential files (on-premise only) | `imports-exports.md`, `sequential-files.md` |
 
-| Surface | Protocol | Use case |
-|---------|----------|----------|
-| **REST API** (Syracuse) | HTTP/JSON | Modern — default for V12 integrations |
-| **Classic SOAP web services** (AWS / GESAWS) | SOAP/XML | Legacy but still fully supported, same in V6/V7/V12 |
-| **SData** | OData-like XML | Older middle-tier integrations, less common in new builds |
+Sage's own rule (Web services overview): the Web API can read data from all modules; updates go through
+the Web API for modules rebuilt on classes/representations; SOAP serves modules still on the Classic
+interface and supports read and update. Sage X3 Online accepts only OAuth2 for web services and does
+not allow file-based integration.
 
-Publishing *outbound* calls (X3 calls someone else) uses a separate set of primitives — see the consumer sections in `web-services-rest.md` (REST/JSON) and `web-services-soap.md` (SOAP envelope + client).
+## The integration log table
 
-## Choosing between SOAP and REST
+One custom table, created in the table dictionary (GESATB), shared by every integration. Abbreviation
+`YIL`; index `YIL0` = `LOGID` (unique), `YIL1` = `CORRID` (not unique, for idempotency look-ups).
 
-| Driver | Pick |
-|--------|------|
-| New partner, new integration | REST (`web-services-rest.md`) |
-| Existing partner with deployed SOAP client | SOAP (`web-services-soap.md`) |
-| Complex array / matrix parameters | SOAP — REST flattens awkwardly |
-| Mobile / browser client | REST — no SOAP tooling left |
-| Internal X3 ↔ X3 between folders | Either; REST is simpler |
-| Streaming or large payloads | REST with HTTP chunking |
-| Metadata-heavy parameter contracts | SOAP — WSDL is well-understood by partner tooling |
-
-When in doubt: REST for new code, SOAP only when an existing constraint demands it.
-
-## File exchange — when HTTP isn't an option
-
-Some partners still want files over SFTP. Pattern:
-
-1. Write the file to `TMP/` via `Openo` + `Writeseq` (see `builtin-functions.md`).
-2. Trigger the transfer via `System` calling a shell helper (`lftp`, `scp`, `curl`).
-3. Log the response into a tracking table (`YINTEGRATIONLOG`).
-4. Schedule the job with the X3 batch scheduler (`GESAPL`) or externally.
-
-Avoid keeping credentials in the L4G source — use `PARAMG` parameter values stored encrypted or environment-level config (`security-permissions.md`).
-
-## Integration traces — log every call
-
-Every integration script (inbound or outbound, REST or SOAP or file-based) logs to a dedicated table:
+| Column | GESATB type | Content |
+|---|---|---|
+| `LOGID` | L (long integer) | `uniqid([F:YIL])` |
+| `LOGDATTIM` | ADATIM (datetime) | `datetime$` (GMT) |
+| `USR` | AUS (user code) | `GACTX.USER` |
+| `DIRECTION` | A, 3 | `IN` / `OUT` |
+| `CHANNEL` | A, 30 | Outgoing service name, SOAP publication, or class/representation |
+| `OPERATION` | A, 80 | HTTP method + sub-URL, SOAP operation, or facet |
+| `CORRID` | A, 50 | Partner correlation / idempotency key |
+| `HTTPSTA` | C (short integer) | HTTP status (0 when none) |
+| `STA` | A, 10 | `OK` / `KO` / `RETRY` |
+| `REQBODY`, `RESBODY` | ACB (CLOB) | Payloads with secrets removed |
 
 ```l4g
-Raz [F:YINTLOG]
-[F:YINTLOG]INTDAT = date$
-[F:YINTLOG]INTTIM = time$
-[F:YINTLOG]INTUSER = [V]GUSER
-[F:YINTLOG]ENDPOINT = URL
-[F:YINTLOG]HTTPCODE = CODE
-[F:YINTLOG]RESP = left$(RESP, 2000)
-Write [YINTLOG]
+# Script YINTLOGLIB - one row per call. Call it AFTER the business Commit/Rollback:
+# inside an open transaction the row joins it and disappears on Rollback.
+Subprog YINTLOG_WRITE(DIRECTION, CHANNEL, OPERATION, CORRID, HTTPSTA, STA, REQBODY, RESBODY)
+Value Char    DIRECTION(), CHANNEL(), OPERATION(), CORRID(), STA()
+Value Integer HTTPSTA
+Value Clbfile REQBODY(), RESBODY()
+Local File YINTLOG [YIL]
+Local Shortint TRANS_OPEN
+  Raz [F:YIL]
+  [F:YIL]LOGID     = uniqid([F:YIL])
+  [F:YIL]LOGDATTIM = datetime$
+  [F:YIL]USR       = GACTX.USER
+  # Parameters share the column names: [L] makes the parameter explicit (4gl_default.html)
+  [F:YIL]DIRECTION = left$([L]DIRECTION, 3)
+  [F:YIL]CHANNEL   = left$([L]CHANNEL, 30)
+  [F:YIL]OPERATION = left$([L]OPERATION, 80)
+  [F:YIL]CORRID    = left$([L]CORRID, 50)
+  [F:YIL]HTTPSTA   = [L]HTTPSTA
+  [F:YIL]STA       = left$([L]STA, 10)
+  [F:YIL]REQBODY   = [L]REQBODY
+  [F:YIL]RESBODY   = [L]RESBODY
+  [L]TRANS_OPEN = adxlog
+  If [L]TRANS_OPEN = 0 : Trbegin [YIL] : Endif
+  Write [YIL]
+  If fstat
+    If [L]TRANS_OPEN = 0 and adxlog = 1 : Rollback : Endif
+    End
+  Endif
+  If [L]TRANS_OPEN = 0 : Commit : Endif
+End
 ```
 
-When production goes sideways you'll thank yourself — `adxlog.log` is not enough to debug an integration after the fact. See `debugging-traces.md` for the retention and rotation patterns.
+`Write` must run inside a transaction (4gl_write.html), hence the `adxlog` idiom from `database.md`.
+The default search order for a variable without class is `[S], [L], [V], [M], [F]` (4gl_default.html), so
+the unprefixed names would already resolve to the parameters; the `[L]` prefix states the intent.
+Purge old rows with a scheduled task (`batch-scheduling.md`); retention rules live in `audit-compliance.md`.
 
-## Cross-cutting gotchas
+## Gotchas
 
-These apply to both SOAP and REST. Protocol-specific gotchas live in the respective files.
+- **TLS** — Basic authentication sends a base64 (not encrypted) password: Sage requires the Syracuse
+  server in HTTPS for production. For outbound calls, add the partner's CA certificates / certificates
+  to the Outgoing REST web service record.
+- **Encoding** — escape every interpolated value: `escjson` for JSON, a character loop for XML
+  (`web-services-soap-client.md`). SOAP `codeLang` takes an X3 code (FRA, ENG); the `Accept-Language`
+  header takes ISO codes (fr-FR).
+- **Payload size** — inbound SOAP volume is metered by the licence (`WSSIZELIMIT` per `WSPERIOD`, then
+  `WSGRACELIMIT` slow-down, then stop). Outbound limits are community-reported only (see
+  `web-services-rest-client.md`): page through large data instead of pulling it in one call.
+- **Credentials** — inbound calls run as a Syracuse user mapped to an X3 user: give it a dedicated,
+  minimal profile (`security-permissions.md`). Outbound Basic credentials live in the Outgoing REST web
+  service record, not in source. SOAP `codeUser` is ignored.
+- **Header length** — `EXEC_REST_WS` header values are `Char` (255 max): long bearer tokens need
+  `EXEC_REST_WSCLB`.
+- **Timeouts** — no timeout parameter is documented on `EXEC_REST_WS`, `EXEC_HTTP`, or the outgoing
+  service record. Inbound SOAP has pool queue / unused / life timeouts (`web-services-soap.md`).
 
-- **Self-signed certs** — the runtime rejects them by default; configure the trust store via Syracuse rather than disabling TLS verification.
-- **Timeouts** — HTTP helpers have a default (often 30s); long-running partner APIs need an explicit override.
-- **Encoding** — default is UTF-8 for REST, often ISO-8859-1 in older SOAP — check `Content-Type` before parsing.
-- **Payload size** — both protocol layers buffer the whole body in memory; don't pass megabytes through a single call, chunk or use file exchange.
-- **Credential storage** — never hardcode API keys, passwords, or OAuth secrets in `.src` files. Use `GESADP` parameters with encrypted storage. See `security-permissions.md`.
-- **Audit trail** — every integration logs `[V]GUSER`, `date$`, `time$`, endpoint, status, and a truncated response body. Required for support and audit.
-- **Idempotency** — every inbound service should accept a partner correlation key and refuse to double-process; every outbound retry uses the same correlation key.
-- **Versioning** — never change a published service signature in place. Publish `_V2` and run both during deprecation.
+## Go-live checklist
 
-## The publishing checklist (any new service)
+1. Surface chosen from the table above; signature frozen (publish a new name rather than change one).
+2. Inbound REST: class + representation validated, endpoint mapped to the folder. Inbound SOAP: GESASU
+   "Web services" flag, GESAWE publication, pool started, host web-service child processes > 0.
+3. Technical user with a minimal function profile; HTTPS; auth mode enabled in Syracuse.
+4. Every input validated in code; business errors returned as data (SOAP status/messages, REST
+   `$diagnoses`), never as UI boxes.
+5. Database writes follow the transaction idiom in `database.md`.
+6. Every call logged through `YINTLOG_WRITE`; partner correlation key stored in `CORRID` and checked
+   before acting (idempotency).
+7. Tested outside X3 first (Postman / SoapUI), then from X3.
 
-Before opening the firewall to a new integration:
+See also: `debugging-traces.md`, `security-permissions.md`, `database.md`.
 
-1. Function declared in `GESAFC` with `Y`/`Z` prefix.
-2. Access code set in `GESAWE` (SOAP) or representation linked to a Syracuse role (REST).
-3. Pool in `GESAPO` sized for expected concurrency (SOAP — see `web-services-soap.md`).
-4. Validation of every input parameter — services bypass entry-transaction checks.
-5. Status code returned (`OK`, `KO_<reason>`); never crash on bad input.
-6. DB writes wrapped in `If adxlog` transactional idiom (`database.md`).
-7. Trace + integration log on every invocation.
-8. Idempotency key honored.
-9. Documented (signature, semantics, error codes) — partners don't read source.
-
-See also: `web-services-soap.md` (SOAP server and client), `web-services-rest.md` (REST server, REST client, SData), `security-permissions.md` (auth, ACL, credentials), `debugging-traces.md` (integration logging), `code-review-checklist.md` (overall review pass), `version-caveats.md` (which HTTP / JSON / XML helpers are stable).
+## Sources
+- https://online-help.sagex3.com/erp/12/en-us/Content/V7DEV/integration-guide_ws-overview.html
+- https://online-help.sagex3.com/erp/12/en-us/Content/V7DEV/integration-guide_index.html
+- https://online-help.sagex3.com/erp/12/en-us/Content/V7DEV/integration-guide_file-integration.html
+- https://online-help.sagex3.com/erp/12/en-us/Content/V7DEV/integration-guide_ws-basic-authentication.html
+- https://online-help.sagex3.com/erp/12/en-us/Content/V7DEV/administration-reference_outgoing-rest-web-services.html
+- https://online-help.sagex3.com/erp/12/en-us/Content/V7DEV/api-guide_soap-web-services.html
+- https://online-help.sagex3.com/erp/12/en-us/Content/FCT/GESATB.htm
+- https://online-help.sagex3.com/erp/12/en-us/Content/V7DEV/developer-guide_technical-columns-of-database.html
+- https://online-help.sagex3.com/erp/12/en-us/Content/V7DEV/4gl_write.html
+- https://online-help.sagex3.com/erp/12/en-us/Content/V7DEV/4gl_default.html
+- https://online-help.sagex3.com/erp/12/en-us/Content/V7DEV/4gl_uniqid.html
+- https://online-help.sagex3.com/erp/12/en-us/Content/V7DEV/4gl_datetime$.html
+- https://online-help.sagex3.com/erp/11/en-US/V7DEV/how-to_how-to-get-information-relating-to-the-current-context.html

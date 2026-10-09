@@ -1,253 +1,228 @@
-# Localisation — messages, language, dates, numbers
+# Localisation: messages, language, dates and numbers
 
-How to write code that runs in a French folder, an English folder, a German folder, and a Japanese folder without rewriting strings, dates, or numbers. Covers `mess()`, `GESAML` chapters, `[V]GLANGUE`, date / time format codes, and decimal-separator handling.
+How translatable texts are stored and read (`mess`, APLSTD, ATEXTE, ATEXTRA), how to find the session
+language, how to produce text in another language than the session's, and how dates and numbers are
+formatted and parsed. Read it whenever code shows text to a user, writes a document for a partner, or
+reads dates and amounts from a file. Currencies, countries and character sets are in
+`localization-formats.md`.
 
-For currencies (`GESCUR`), country-specific addresses (`GESACO`), and right-to-left / CJK pitfalls, see `localization-formats.md`. For naming conventions (chapters, three-letter codes), see `conventions-and-naming.md`. For email templates that need to localise their body, see `workflow-email.md`.
+## Contents
+- [Where translatable text lives](#where-translatable-text-lives)
+- [mess and message chapters](#mess-and-message-chapters)
+- [Local menu values](#local-menu-values)
+- [Session, folder and partner language](#session-folder-and-partner-language)
+- [Text in another language than the session](#text-in-another-language-than-the-session)
+- [Dates](#dates)
+- [Numbers](#numbers)
+- [Gotchas](#gotchas)
+- [Sources](#sources)
 
-## The localisation surfaces in X3
+## Where translatable text lives
 
-| Surface | Mechanism | Where it lives |
-|---------|-----------|----------------|
-| User-facing messages | `mess(num, chapter, lang)` | `GESAML` (message chapters) |
-| Field labels | Dictionary table descriptions per language | `GESATB` |
-| Menu / function names | Function code + per-language label | `GESAFC` |
-| Date / time display | `format$` codes + `[V]GFORMA` | Folder parameters |
-| Currency | `GESCUR` + `GESDEV` | Per-folder |
-| Address layout | `GESACO` + country-specific rules | Per-country |
-| Email templates | Per-language body | Workflow templates |
+| Table | Holds | Read in the connection language | Maintained in |
+|---|---|---|---|
+| APLSTD `[AST]` | Message chapters and local menus, one row per chapter + number + language | `mess(NUM, CHAPTER, 1)` | TXT |
+| ATEXTE `[ATX]` | Dictionary texts (field titles...), identified by a number | `func AFNC.TEXTE(NUMBER)` | the dictionary functions |
+| ATEXTRA `[AXX]` | Translatable data: columns whose data type starts with `AX` (descriptions of currencies, languages, miscellaneous tables...) | `func AFNC.TEXTRA(TABLE, FIELD, KEY1, KEY2)` | the function owning the data |
 
-Three rules you internalise once and never break:
+- The help gives the two AFNC calls in formula (calculator) syntax; the text is returned in the current
+  connection language.
+- An `AX*` column is not really stored in its table: the text sits in ATEXTRA under the key table + field
+  + language + record key (`AXX0` = CODFIC+ZONE+LANGUE+IDENT1+IDENT2). The help's example for
+  miscellaneous table 23, code COD, field LNGDES in French is the key `ATABDIV` / `LNGDES` / `FRA` /
+  `23` / `COD`.
+- ATEXTE numbers below 100,000 are standard and stable; specific texts get numbers above 100,000,
+  assigned automatically and possibly renumbered by patch integration. Never hard-code an ATEXTE number of
+  a specific text.
 
-1. **Never put a literal user-facing string in code.** Always `mess()` with a chapter and number.
-2. **Never assume a date format.** Always `format$` or read the user's `[V]GFORMA`.
-3. **Never assume a currency or its decimal places.** Always look it up via `GESCUR` / `func AFNC.PARAMG("CUR", code, "...")`.
+## mess and message chapters
 
-## Messages and chapters (`mess` / `GESAML`)
-
-Path: **Setup → General parameters → Messages**.
-
-Messages are organised in **chapters**:
-
-| Chapter | Standard or custom | Use |
-|---------|--------------------|-----|
-| 1 – 999 | Reserved standard | Don't add to these |
-| 1000+ | Custom (Y or Z prefixed by convention) | Your project's messages |
-
-Each chapter is a number; each message inside has a number and a translation per supported language.
-
-### `mess()` signature
-
-```l4g
-Errbox mess(num, chapter, lang)
+```
+mess(NUMBER, CHAPTER, TABLE)
 ```
 
-| Arg | Meaning | Common value |
-|-----|---------|--------------|
-| `num` | Message number within the chapter | `123` |
-| `chapter` | Chapter number | `1000` for your custom chapter |
-| `lang` | Language flag | `1` = current session language (`[V]GLANGUE`) |
+| Argument | Meaning |
+|---|---|
+| NUMBER | Message number in the chapter |
+| CHAPTER | Chapter number |
+| TABLE | Message table: `1` = application messages (table APLSTD, whose name is in the `adxtms` variable), `0` = engine messages (a file in the engine's `lan` directory) |
 
-Almost always pass `1` for `lang` — the engine resolves to the user's current language. Pass an explicit code (`"FRA"`, `"ENG"`) only when generating a document in a non-default language (e.g. emailing a partner in their own language).
-
-```l4g
-# Display the right language to the user
-Errbox mess(45, 1000, 1)
-
-# Force a specific language (sending an email to a French partner from an English session)
-Local Char SUBJECT(100)
-SUBJECT = mess(45, 1000, [F:BPC]LAN)         # use the partner's language
-```
-
-### Defining a message
-
-In `GESAML`:
-
-1. Open the chapter (or create one with a `Y`/`Z` prefix for your custom range).
-2. Add the message number (e.g. `45`).
-3. Fill the translation grid for every supported language: `FRA`, `ENG`, `GER`, `SPA`, etc.
-4. Save and validate — messages are now resolvable from L4G.
-
-If you use a number / chapter that has no translation in the user's language, the engine falls back to language code 1 (typically French in default installs) — never `mess()` returns blank, so a missing translation surfaces as the wrong language, not as a crash.
-
-### Custom chapter numbering
-
-| Range | Use |
-|-------|-----|
-| 1000 – 1999 | General custom messages for your project |
-| 2000 – 2999 | Module / vertical-specific (e.g. all `YINT` messages) |
-| 8000 – 8999 | Reserved for partner / customer-specific extensions |
-
-Reserve chapters per module to avoid collisions when integrating multiple custom modules.
-
-### `mess` vs `messa` vs literals
-
-| Use | When |
-|-----|------|
-| `mess(n, ch, 1)` | Standard message lookup |
-| `messa(n, ch, 1)` | Returns trimmed string (no trailing spaces) |
-| String literal | Only for log messages, traces (developer-facing), and code comments |
+- The result is a `Char` in the **language of the connection**. The third argument is not a language.
+- Engine chapter 13 holds the engine error messages: `errmes$(N)` equals `mess(N, 13, 0)`.
+- In table 1, chapters 1-99 and most chapters above 200 are local menus; chapters 100-199 hold error
+  messages. Specific developments use chapters 160-164 and 6000-6199 for messages and 6200-6999 for local
+  menus: full range table in `conventions-and-naming.md`.
+- Chapters are created in **TXT** (Local menus - messages): chapter number, description, a "Local menu"
+  box (unchecked for a plain message chapter), module, activity code (X/Y/Z to protect it from standard
+  patches), "Do not translate", and the grid of numbered texts. Translations are entered in the same
+  screen after switching the connection language.
+- A local menu flagged "Changeable" can be edited by users in setup and is not overwritten by
+  revalidation, version installation or patches.
 
 ```l4g
-# DEV-facing — literal is fine
-Call ECRAN_TRACE("YBATCH started, args=" + [V]GPARAM1, 0) From GESECRAN
-
-# USER-facing — always mess()
-Errbox mess(45, 1000, 1)
+Local Char MSG(250)
+  [L]MSG = mess(12, 6000, 1)            : # specific chapter 6000, message 12
+  [L]MSG = errmes$(5)                   : # engine error message 5 (= mess(5, 13, 0))
 ```
 
-The line: anything a non-developer will read is `mess()`. Traces and ECRAN_TRACE strings stay literal because they're only seen in dev or by support engineers reading the log.
+## Local menu values
 
-## Session language — `[V]GLANGUE`
-
-The engine sets `[V]GLANGUE` from the user's profile at session start. Common values:
-
-| Code | Language |
-|------|----------|
-| `FRA` | French |
-| `ENG` | English |
-| `GER` | German |
-| `SPA` | Spanish |
-| `ITA` | Italian |
-| `DUT` | Dutch |
-| `POR` | Portuguese |
-| `JPN` | Japanese |
-| `CHI` | Chinese |
-
-Read it when you need to vary behaviour by language (rare — usually you want `mess()` to handle it):
+A field whose data type is a local menu stores the **rank** of the choice (local menu 1: 1 = No,
+2 = Yes). Compare ranks in code; convert to a label only for display.
 
 ```l4g
-If [V]GLANGUE = "FRA"
-    Local Char DATE_FMT(10)
-    DATE_FMT = "JJ/MM/AAAA"
-Else
-    DATE_FMT = "MM/DD/YYYY"
-Endif
+Local Char LABEL(30)
+Local Integer NBCHOICES
+  [L]LABEL = mess([F:YTK]YSTATUS, 6200, 1)       : # label of the stored rank (specific local menu 6200)
+  [L]LABEL = format$("LA6200:30X", [F:YTK]YSTATUS) : # same, through a local-menu format
+  [L]NBCHOICES = len(mess(0, 6200, 1))           : # message 0 has one character per choice
 ```
 
-Better: use `[V]GFORMA` (date format) which the engine already populates from the language / folder.
+Titles of local menus 1-99 are messages of chapter 0; titles of local menus above 200 are in chapter 200
+(message 1 = title of local menu 201).
 
-## Date and time formatting
+## Session, folder and partner language
 
-Date formats are language- and folder-dependent.
+| Need | V12 code | Notes |
+|---|---|---|
+| Session language in class code | `this.ACTX.LAN` | Context property, read-only |
+| Session language outside a class | `GACTX.LAN` | `GACTX` is the default context created at connection |
+| Default language of the folder | `this.ACTX.AFOLD.ALANGDEF` | Context chapter AFOLD |
+| Classic code | `[V]GLANGUE` | Community-reported as the folder language; prefer the context |
+| Language of a business partner | `[F:BPR]LAN` | Column LAN of BPARTNER, linked to TABLAN |
 
-### `format$()` codes
+- `messname` and `isomess` are flagged **Internal** in the keyword glossary: do not use them.
+- Languages are maintained in GESTLA, table TABLAN `[TLA]` (index TLA0 = LAN): `LANISO` (ISO code),
+  `LANCON` (usable as a connection language), `LANRPL` (backup language), `LANUNI` (needs Unicode).
+- A context for another language can be built with `fmet CTX.ACTX_INIT_LAN(FOLDER, LAN, LOGIN)` (status
+  -1 = language not supported, folder default used). The help does not say that `mess` follows such a
+  secondary context, so do not rely on it for translations.
 
-| Code | Meaning | Example |
-|------|---------|---------|
-| `J` / `D` | Day | `15` |
-| `M` | Month | `12` |
-| `A` / `Y` | Year | `2024` |
-| `JJ/MM/AAAA` | French long | `15/12/2024` |
-| `MM/DD/YYYY` | US long | `12/15/2024` |
-| `DD-MMM-YYYY` | UK with month name | `15-DEC-2024` |
-| `H` | Hour (24h) | `14` |
-| `M` (in time context) | Minute | `35` |
-| `S` | Second | `42` |
+## Text in another language than the session
 
-### Pattern: format dates in user's language
+`mess` always answers in the connection language, so a batch that writes to partners in their own
+language cannot use it directly. Read APLSTD with its key `CLE` (LANCHP + LANNUM + LAN) and fall back to
+the connection language when the translation is missing:
 
 ```l4g
-Local Char DATE_STR(20)
-
-# Use the folder's default format
-DATE_STR = num$([F:SOH]ORDDAT, [V]GFORMA)
-
-# Or force a specific format (e.g. logging)
-DATE_STR = num$(date$, "AAAA-MM-JJ")            # ISO-like, language-agnostic
+# Message NUM of chapter CHAP in language LAN (for example [F:BPR]LAN of the recipient)
+Funprog YMESS_LAN(NUM, CHAP, LAN)
+Value Integer NUM, CHAP
+Value Char    LAN()
+Local File APLSTD [AST]
+  Read [AST]CLE = [L]CHAP; [L]NUM; [L]LAN
+  If fstat = 0
+    End [F:AST]LANMES
+  Endif
+End mess([L]NUM, [L]CHAP, 1)
 ```
 
-Two safe defaults:
+For translatable data (`AX*` columns) the same approach applies to ATEXTRA with index `AXX0`. Put your
+own placeholders (for example `%1`) in the message text and substitute the values after reading it, so
+translators never see code. Sending the result by e-mail: `workflow-email.md`.
 
-- **For display to the user** — use `[V]GFORMA` to respect their preference.
-- **For logs, files, integration payloads** — use ISO `AAAA-MM-JJ`. Never assume a locale.
+## Dates
 
-### Pattern: parse a date from a string
+| Expression | Result |
+|---|---|
+| `[31/12/2024]` | Date literal (day/month/year) |
+| `date$` | Current date |
+| `gdat$(DAY, MONTH, YEAR)` | Builds a date; out-of-range days and months are normalised, not rejected |
+| `[0/0/0]`, `gdat$(0, 0, 0)` | Null date |
+| `num$(DATE)` | Always `DD/MM/YYYY`, whatever the language |
+| Assigning a Date to a Char | `YYYYMMDD` |
+| `left$(num$(datetime$), 10)` | Current UTC date as `YYYY-MM-DD` |
+
+`format$` with a `D` format formats a date; literal text goes between square brackets:
+
+| Format code | Meaning |
+|---|---|
+| `DD`, `MM`, `YYYY` / `YY` | Day, month number, year |
+| `MMM` | Three-letter English month abbreviation |
+| `M` repeated more than 3 times | Month name truncated to the number of positions |
+| `D` repeated more than 2 times | Day name |
+| `h`, `m`, `s` | Hour, minutes, seconds |
+| `DZ:` prefix | Accept the null date (blank output) |
+| `DD1`..`DD5` | Standard formats following the connection locale: DD1 `01/01`, DD2 `01/01/2013`, DD3 `01 January 2013`, DD4 / DD5 add `15:20` / `15:20:45` (the page's text names DD1-DD4; its examples go to DD5) |
 
 ```l4g
-Local Date    D
-Local Integer ERR
-D = gdat([L]DATE_STR, [V]GFORMA, ERR)
-If ERR
-    Errbox mess(46, 1000, 1)                     # "Invalid date format"
-Endif
+Local Char TXT(30)
+  [L]TXT = format$("D:DD[/]MM[/]YYYY", date$)   : # fixed day/month/year layout
+  [L]TXT = format$("D:YYYY[-]MM[-]DD", date$)   : # ISO layout for files and APIs
+  [L]TXT = format$("DD2", date$)                : # user-facing, follows the connection locale
 ```
 
-`gdat` returns `[1841-12-29]` (epoch) on parse failure; the `ERR` out-param is the diagnostic. Always check it.
-
-## Numbers and decimal separators
-
-Decimal separator varies by language: `.` in English, `,` in French. The engine handles display via `num$()` based on `[V]GLANGUE`, but **string parsing of numbers is locale-sensitive**:
+There is no documented function that parses a date string. Split it, build it with `gdat$`, and reject
+values that `gdat$` normalised:
 
 ```l4g
-# val() expects the engine's internal locale (typically "."); fine for code-internal.
-Local Decimal V
-V = val("12.50")                                  # works
-
-# For user-supplied input, convert separators first
-[L]INPUT = replace$([L]INPUT, ",", ".")
-V = val([L]INPUT)
+# "DD/MM/YYYY" from an external file -> Date, or the null date when invalid
+Funprog YPARSE_DMY(TXT)
+Value Char TXT()
+Local Integer DD, MM, YY
+Local Date    RESULT
+  If len([L]TXT) <> 10 : End [0/0/0] : Endif
+  [L]DD = val(mid$([L]TXT, 1, 2))
+  [L]MM = val(mid$([L]TXT, 4, 2))
+  [L]YY = val(mid$([L]TXT, 7, 4))
+  If [L]DD < 1 or [L]MM < 1 or [L]MM > 12 or [L]YY < 1600 : End [0/0/0] : Endif
+  [L]RESULT = gdat$([L]DD, [L]MM, [L]YY)
+  If day([L]RESULT) <> [L]DD : End [0/0/0] : Endif : # 31/04 became 01/05
+End [L]RESULT
 ```
 
-For amounts, decimals depend on the currency (`GESCUR` defines them per code) — see the currency section below.
+## Numbers
 
-## Currencies, addresses, RTL/CJK
-
-These topics moved to `localization-formats.md`:
-
-- Currencies (`GESCUR` / `GESDEV`), `CURDEC`/`CURSYM`, `GDEV.DEVISE` conversion, rounding and reporting
-- Country-specific address layouts via `GESACO` / `FORMAT_ADDR`, postcode validation
-- Right-to-left and double-byte / CJK languages (UTF-8 byte vs character, sort order, fonts)
-
-## Translation discipline for emails and templates
-
-Workflow rule emails (`GESAWR`) support per-language templates:
-
-1. In `GESAWS` (templates), the body is stored once per language.
-2. Recipients receive the version matching their language profile.
-3. `[V_xxx]` substitutions resolve from the rule's variable bindings; the surrounding text is the translated template.
-
-Pattern for code-built emails:
+- `format$("N:10.2", X)` formats a number; option `3` groups digits by three (`"N3:12.2"`), `0` pads
+  with zeros, `z` returns blanks for zero. The decimal separator is the 4th character of the internal
+  variable `adxsca`, the thousands separator the 3rd and the overflow character the 5th; read it if you
+  need the separators, but do not rewrite it in application code.
+- `num$(X)` returns the plain decimal representation with a dot and no spaces: use it for files and APIs.
+- `val(S)` accepts leading spaces and stops at the first character that is not a digit or at the second
+  dot: `val("12,50")` is 12. Normalise external input first:
 
 ```l4g
-Local Char SUBJECT(100), BODY(8000), LAN(3)
-
-# Use the recipient's language, not the sender's
-LAN = [F:BPC]LAN
-If LAN = "" : LAN = [V]GLANGUE : Endif
-
-SUBJECT = mess(100, 1000, val(num$(LAN)))         # if mess accepts numeric language flag
-# Or pass the language code as the third arg if your patch level supports it:
-# SUBJECT = mess(100, 1000, LAN)
-
-BODY = mess(101, 1000, val(num$(LAN)))
-BODY = replace$(BODY, "%CUSTOMER%", [F:BPC]BPCNAM(0))
-BODY = replace$(BODY, "%AMOUNT%",   num$([L]AMT, "F2"))
-
-Call ENVMAIL([F:BPC]EMAIL, "", "", SUBJECT, BODY, "", "") From AMAIL
+# "1 234,50" (space thousands, comma decimals) -> 1234.5
+Funprog YVAL_COMMA(TXT)
+Value Char TXT()
+Local Char CLEAN(60)
+  [L]CLEAN = ctrans([L]TXT, " ", "")   : # third string shorter: spaces are removed
+  [L]CLEAN = ctrans([L]CLEAN, ",", ".")
+End val([L]CLEAN)
 ```
 
-The template-with-placeholder pattern (`%CUSTOMER%` etc.) keeps translatable copy separate from variable substitution.
+For `1.234,50`, remove the dots before swapping the comma. Rounding to a currency: `arr(VALUE, STEP)`
+(half away from zero) with the currency's rounding step, see `localization-formats.md`. All format masks:
+`builtin-functions.md`.
 
-## Common pitfalls
+## Gotchas
+- `mess(n, ch, 1)` cannot return another language: the `1` selects the application message table.
+- `[F:AST]LANMES` read directly is only filled if the text was translated: always keep a fallback.
+- `num$` on a date and Date-to-Char assignment ignore the user's locale; never show them to users.
+- `MMM` gives English abbreviations in every language.
+- `gdat$(31, 4, 2024)` silently returns 1 May 2024.
+- `format$` returns a string of spaces when the value does not match the format: test for it.
+- A local menu stores ranks; inserting a choice in the middle of the chapter changes existing data.
 
-- **Literal English string** in production code that runs in French — caught by `code-review-checklist.md` Tier 2.
-- **Hardcoded date format** — `num$(D, "MM/DD/YYYY")` ships, French users see `12/15/2024` and read it as 12 December 15 (which doesn't exist). Use `[V]GFORMA`.
-- **Mess number reused across chapters** — `mess(45, 100, 1)` and `mess(45, 1000, 1)` are different messages. Document chapters in a per-project chapter map.
-- **Non-existent language code** — `mess(n, ch, "XXX")` returns the language-1 fallback silently, which looks fine in dev (where the engine is in French) and broken in prod.
-- **Email template not translated** — recipients in other languages get the default-language body. Always provide translations or fall back to a marked "untranslated" version.
-- **Decimal separator** — parsing user-typed amounts without normalizing `,` → `.` first. French users type `12,50`; `val()` returns `12`.
+See also: `localization-formats.md`, `conventions-and-naming.md`, `builtin-functions.md`,
+`workflow-email.md`, `v12-classes.md`.
 
-For currency-, address-, and CJK-specific pitfalls, see `localization-formats.md`.
-
-## Messages-and-dates checklist
-
-1. Every user-facing string goes through `mess()`?
-2. Every date display uses `[V]GFORMA` or an explicit ISO format for logs?
-3. Every date parse uses `gdat` and checks the error flag?
-4. Email templates exist in every supported language?
-5. New custom chapter declared in `GESAML` and reserved in your project's chapter map?
-6. User-typed numbers normalised before `val()`?
-
-For currency, addresses, and CJK / RTL: see the checklist in `localization-formats.md`.
-
-See also: `localization-formats.md` (currencies, addresses, RTL/CJK), `conventions-and-naming.md` (chapter ranges, Y/Z rule), `workflow-email.md` (`ENVMAIL`, multi-language email templates), `builtin-functions.md` (`format$`, `num$`, `gdat`), `code-review-checklist.md` (Tier 2 — hardcoded strings), `version-caveats.md` (`mess` signature variants).
+## Sources
+- https://online-help.sagex3.com/erp/12/en-us/Content/V7DEV/4gl_mess.html
+- https://online-help.sagex3.com/erp/12/en-us/Content/V7DEV/4gl_adxtms.html
+- https://online-help.sagex3.com/erp/12/en-us/Content/FCT/TXT.htm
+- https://online-help.sagex3.com/erp/12/en-us/Content/FCT/TXT_TRA.htm
+- https://online-help.sagex3.com/erp/12/en-us/Content/FCT/GESTLA.htm
+- https://online-help.sagex3.com/erp/12/en-us/Content/MCD/APLSTD.htm , MCD/ATEXTE.htm , MCD/ATEXTRA.htm , MCD/TABLAN.htm , MCD/BPARTNER.htm
+- https://online-help.sagex3.com/erp/12/en-us/Content/V7DEV/developer-guide_context.html
+- https://online-help.sagex3.com/erp/12/en-us/Content/V7DEV/developer-guide_context-global-variables.html
+- https://online-help.sagex3.com/erp/12/en-us/Content/V7DEV/4gl_x3script-keywords-glossary.html
+- https://online-help.sagex3.com/erp/12/en-us/Content/V7DEV/4gl_format$.html
+- https://online-help.sagex3.com/erp/12/en-us/Content/V7DEV/4gl_adxsca.html
+- https://online-help.sagex3.com/erp/12/en-us/Content/V7DEV/4gl_gdat$.html
+- https://online-help.sagex3.com/erp/12/en-us/Content/V7DEV/4gl_num$.html
+- https://online-help.sagex3.com/erp/12/en-us/Content/V7DEV/4gl_val.html
+- https://online-help.sagex3.com/erp/12/en-us/Content/V7DEV/4gl_ctrans.html
+- https://online-help.sagex3.com/erp/12/en-us/Content/V7DEV/4gl_char.html
+- https://online-help.sagex3.com/erp/12/en-us/Content/V7DEV/4gl_date$.html
+- https://www.greytrix.com/blogs/sagex3/?p=12640 (community: GLANGUE)

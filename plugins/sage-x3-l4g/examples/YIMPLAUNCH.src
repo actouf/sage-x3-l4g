@@ -1,0 +1,69 @@
+##############################################################
+# YIMPLAUNCH - run an import template silently on a server file
+#
+# Purpose
+#   YIMP_FILE   checks that TMP/<NAME>.csv exists, imports it with YIMP_SILENT,
+#               then renames it .done (success) or .err (quarantine, never deleted)
+#   YIMP_SILENT IMPORTSIL From GIMPOBJ wrapper, as documented in the GESAOE
+#               technical appendix ("Silent import"); same code as imports-exports.md
+#
+# Prerequisites
+#   - GESAOE: an active import template (for instance YCU for the object of
+#     SPEYCU.src), Location = Server; the object must allow imports
+#   - The file in the TMP volume of the folder, built with filpath("TMP", ...)
+#   - Template errors are written to the import trace (LECTRACE, see
+#     debugging-traces.md); [M:IMP2]STAT values are not listed by the help, so
+#     the most reliable check stays functional: read what the file should create
+#
+# Usage: [L]STA = func YIMPLAUNCH.YIMP_FILE("YCU", "ycust0001", [L]MSG)
+# References: imports-exports.md, sequential-files.md (filpath, renamefile),
+#             batch-scheduling.md (run it from a recurring task)
+##############################################################
+
+##############################################################
+# YIMP_FILE - import TMP/<NAME>.csv with TEMPLATE, then archive the file
+# Returns [V]CST_AOK or [V]CST_AERROR; MSG receives the error text
+##############################################################
+Funprog YIMP_FILE(TEMPLATE, NAME, MSG)
+Value    Char TEMPLATE(), NAME()
+Variable Char MSG()
+Local Char    PATH(250), TARGET(250)
+Local Integer STA, RC
+  [L]MSG  = ""
+  [L]PATH = filpath("TMP", [L]NAME, "csv")
+  If filinfo([L]PATH, 0) < 0                   : # -20 missing, -27 access denied
+    [L]MSG = "File not found:" - [L]PATH
+    End [V]CST_AERROR
+  Endif
+  [L]STA = func YIMPLAUNCH.YIMP_SILENT([L]TEMPLATE, [L]PATH, [L]MSG)
+  If [L]STA = [V]CST_AOK
+    [L]TARGET = filpath("TMP", [L]NAME, "done")
+  Else
+    [L]TARGET = filpath("TMP", [L]NAME, "err")
+  Endif
+  [L]RC = renamefile([L]PATH, [L]TARGET)       : # 0 ok, -20 missing, -27 denied
+  If [L]RC <> 0
+    [L]MSG = [L]MSG - "(rename" - num$([L]RC) + ")"
+  Endif
+End [L]STA
+
+##############################################################
+# YIMP_SILENT - returns [V]CST_AOK or [V]CST_AERROR; YMSG receives the decoded error text
+##############################################################
+Funprog YIMP_SILENT(YTEMPLATE, YFILE, YMSG)
+Value    Char YTEMPLATE(), YFILE()
+Variable Char YMSG()
+  YMSG = ""
+  If !GSERVEUR
+    Call OUVRE_TRACE("Import " + YTEMPLATE) From LECFIC
+  Endif
+  Call IMPORTSIL(YTEMPLATE, YFILE) From GIMPOBJ
+  If !GSERVEUR
+    Call CLOSE_LOC From LECFIC : # as in Sage's appendix; community code uses FERME_TRACE
+  Endif
+  # Failure test as used in community code (STAT values are not listed in the help)
+  If [M:IMP2]STAT <> 0 or GOK < 1
+    Call ERR_IMPORT([M:IMP2]STAT, YMSG) From GIMPOBJ
+    End [V]CST_AERROR
+  Endif
+End [V]CST_AOK

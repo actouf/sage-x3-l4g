@@ -1,0 +1,92 @@
+##############################################################
+# YCONTRACT_CSPE - specific script of the V12 class YCONTRACT
+#
+# Purpose
+#   $PROPERTIES  CONTROL rule on YAMOUNT: a negative amount is refused
+#   $EVENTS      AINSERT_CONTROL_BEFORE: default values (Sage: "can be used to
+#                assign default values"); AINSERT_CONTROL_AFTER and
+#                AUPDATE_CONTROL_AFTER: cross-property check (end date not
+#                before start date), after the property controls
+#   $METHODS     YCLOSE: closes the contract, status returned in ARET_VALUE;
+#                the caller persists the change with AUPDATE
+#   No Trbegin / Commit / Rollback anywhere: control events run without a
+#   transaction and must not write; the supervisor owns the update transaction.
+#
+# Prerequisites
+#   - GESATB: table YCONTRACT, abbreviation YCT, index YCT0 on YCTNUM, index YCT1
+#     on BPCNUM; fields YCTNUM, BPCNUM, YSTRDAT and YENDDAT (dates), YAMOUNT
+#     (decimal), YSTATUS (local menu 6201 in TXT: 1 Draft, 2 Active, 3 Closed)
+#   - GESACLA: persistent class YCONTRACT on table YCONTRACT, properties named
+#     like the columns; Methods tab: YCLOSE, return type Integer, no parameter;
+#     Scripts grid: Specific / YCONTRACT_CSPE / rank 1500 / activity code YCTR;
+#     validate the class after every change
+#   - TXT: chapter 160, message 21 "Negative amount", 22 "End date before start date"
+#   - GESACV: create activity code YCTR; activate it in GESADS (Specific tab)
+#     and revalidate the folder. A representation (v12-representations.md)
+#     is only needed for the UI and the REST API, not to use the class from code.
+#
+# References: v12-classes.md, common-patterns-v12.md, localization.md (mess)
+##############################################################
+
+$EVENTS
+  Case [L]CURPTH
+    When ""
+      Case [L]AEVENT
+        When "AINSERT_CONTROL_BEFORE" : Gosub Y_INS_DEFAULTS
+        When "AINSERT_CONTROL_AFTER"  : Gosub Y_CHECK_DATES
+        When "AUPDATE_CONTROL_AFTER"  : Gosub Y_CHECK_DATES
+      Endcase
+  Endcase
+Return
+
+$PROPERTIES
+  Case [L]CURPRO
+    When "YAMOUNT" : Gosub Y_PROP_YAMOUNT
+  Endcase
+Return
+
+$METHODS
+  Case [L]AMETHOD
+    When "YCLOSE" : Gosub Y_CLOSE
+  Endcase
+Return
+
+$Y_INS_DEFAULTS
+  # Before the property controls; no transaction, no database update
+  If this.YSTATUS = 0
+    this.YSTATUS = 1
+  Endif
+  If this.YSTRDAT = [0/0/0]
+    this.YSTRDAT = date$
+  Endif
+Return
+
+$Y_CHECK_DATES
+  # After all property controls, before the insert / update
+  If this.YENDDAT <> [0/0/0] and this.YENDDAT < this.YSTRDAT
+    [L]ASTATUS = fmet this.ASETERROR("YENDDAT", mess(22, 160, 1), [V]CST_AERROR)
+  Endif
+Return
+
+$Y_PROP_YAMOUNT
+  Case [L]ARULE
+    When "CONTROL"
+      # this.YAMOUNT already holds the new value; refuse it with an error
+      If this.YAMOUNT < 0
+        [L]ASTATUS = fmet this.ASETERROR("YAMOUNT", mess(21, 160, 1), [V]CST_AERROR)
+      Endif
+  Endcase
+Return
+
+$Y_CLOSE
+  # Stateful method: works on this; nothing is written until the caller's AUPDATE
+  If this.YSTATUS = 3
+    [L]ARET_VALUE = [V]CST_AWARNING           : # already closed, nothing to do
+  Else
+    this.YSTATUS = 3                          : # CONTROL / PROPAGATE of YSTATUS run here
+    If this.YENDDAT = [0/0/0] or this.YENDDAT > date$
+      this.YENDDAT = date$
+    Endif
+    [L]ARET_VALUE = [V]CST_AOK
+  Endif
+Return
