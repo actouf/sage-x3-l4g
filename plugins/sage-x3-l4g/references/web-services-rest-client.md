@@ -68,7 +68,7 @@ native V7+ code, returns the HTTP status.
 Header and parameter values above are `Char` (255 characters max), too short for long OAuth2 bearer
 tokens (community report: an 800-character token). A Sage team member on Community Hub and a Sage
 partner deck describe
-`EXEC_REST_WSCLB`, added in V11 patch 17 and V12 patch 23 (2020 R3), not yet in the online help:
+`EXEC_REST_WSCLB`, added in V11 patch 17 and V12 patch 23 (2020 R3); the online help does not document it:
 
 `HTTPSTATUS = func ASYRRESTCLI.EXEC_REST_WSCLB(NAME, HTTPMETHOD, SUBURL, PARAMS, HEADERS, DATA, FUTURE,
 RETURNS, RESHEAD, RESBODY)` where `PARAMS` and `HEADERS` are Clbfile JSON objects
@@ -84,21 +84,21 @@ Value Date    ORDDAT
 Local Clbfile PARAMS(0), HEADERS(1), BODY(1), RESHEAD(0), RESBODY(0)
 Local Integer HTTPSTA
 Local Char    STA(10)
-  PARAMS  = "{}"
-  HEADERS = '{"Accept":"application/json","Content-Type":"application/json",'
-  Append HEADERS, '"Authorization":"Bearer ' + TOKEN + '"}'
-  BODY = '{"orderNumber":"' + escjson(ORDNUM) + '",'
-  Append BODY, '"customer":"' + escjson(CUSTNAME) + '",'
-  Append BODY, '"amount":' + num$(AMOUNT) + ','
-  Append BODY, '"orderDate":"' + format$("D:4Y[-]2M[-]2D", ORDDAT) + '"}'
-  HTTPSTA = func ASYRRESTCLI.EXEC_REST_WSCLB(
-& "YPARTNER", "POST", "/orders", PARAMS, HEADERS, BODY, 0, "", RESHEAD, RESBODY)
-  STA = "KO"
-  If HTTPSTA = 200 or HTTPSTA = 201
-    STA = "OK"
+  [L]PARAMS  = "{}"
+  [L]HEADERS = '{"Accept":"application/json","Content-Type":"application/json",'
+  Append [L]HEADERS, '"Authorization":"Bearer ' + [L]TOKEN + '"}'
+  [L]BODY = '{"orderNumber":"' + escjson([L]ORDNUM) + '",'
+  Append [L]BODY, '"customer":"' + escjson([L]CUSTNAME) + '",'
+  Append [L]BODY, '"amount":' + num$([L]AMOUNT) + ','
+  Append [L]BODY, '"orderDate":"' + format$("D:4Y[-]2M[-]2D", [L]ORDDAT) + '"}'
+  [L]HTTPSTA = func ASYRRESTCLI.EXEC_REST_WSCLB(
+& "YPARTNER", "POST", "/orders", [L]PARAMS, [L]HEADERS, [L]BODY, 0, "", [L]RESHEAD, [L]RESBODY)
+  [L]STA = "KO"
+  If [L]HTTPSTA = 200 or [L]HTTPSTA = 201
+    [L]STA = "OK"
   Endif
-  Call YINTLOG_WRITE("OUT", "YPARTNER", "POST /orders", ORDNUM, HTTPSTA, STA, BODY, RESBODY) From YINTLOGLIB
-End HTTPSTA
+  Call YINTLOG_WRITE("OUT", "YPARTNER", "POST /orders", [L]ORDNUM, [L]HTTPSTA, [L]STA, [L]BODY, [L]RESBODY) From YINTLOGLIB
+End [L]HTTPSTA
 ```
 
 `HEADERS` is not logged: it carries the token.
@@ -120,7 +120,7 @@ End HTTPSTA
 | Instruction | Syntax | Path dialect | Result |
 |---|---|---|---|
 | `ParseInstance` | `ParseInstance OBJ With JSON` after `Local Instance OBJ Using OBJECT` | — | Documented codes 0, -6, -10, -26 |
-| `Select$` | `TXT = OBJ.Select$("$.rates.USD")` | JSONPath (`$.a.b`, `$.list[0].x`) | String |
+| `Select$` | `TXT = OBJ.Select$("$.rates.USD")` | "based on the XML XPath design" (`$.a.b`); the page shows no array index | String |
 | `Contains$` | `R = OBJ.Contains$("/rates/USD")` | JSON pointer (`/a/b`, `/list/0`) | Integer: **0 = present**, -6 = absent |
 | `Get$` | `R = OBJ.Get$("/bar", DEST)` | JSON pointer | Value copied into `DEST` |
 
@@ -151,33 +151,33 @@ Local Clbfile  RESHEAD(0), RESBODY(0)
 Local Integer  HTTPSTA, TRY, WAIT
 Local Decimal  RATE
 Local Instance OBJ Using OBJECT
-  SUBURL = "/latest?base=" + BASECUR + "&symbols=" + TARGETCUR
-  HCOD(1) = "Accept" : HVAL(1) = '"application/json"'
-  WAIT = 2
-  For TRY = 1 To 3
-    HTTPSTA = func ASYRRESTCLI.EXEC_REST_WS(
-& "YFXRATES", "GET", SUBURL, PCOD, PVAL, HCOD, HVAL, "{}", 0, "", RESHEAD, RESBODY)
-    If HTTPSTA <> 429 and HTTPSTA < 500
+  [L]SUBURL = "/latest?base=" + [L]BASECUR + "&symbols=" + [L]TARGETCUR
+  [L]HCOD(1) = "Accept" : [L]HVAL(1) = '"application/json"'
+  [L]WAIT = 2
+  For [L]TRY = 1 To 3
+    [L]HTTPSTA = func ASYRRESTCLI.EXEC_REST_WS(
+& "YFXRATES", "GET", [L]SUBURL, [L]PCOD, [L]PVAL, [L]HCOD, [L]HVAL, "{}", 0, "", [L]RESHEAD, [L]RESBODY)
+    If [L]HTTPSTA <> 429 and [L]HTTPSTA < 500
       Break
     Endif
-    If TRY < 3
-      Sleep WAIT
-      WAIT = WAIT * 2
+    If [L]TRY < 3
+      Sleep [L]WAIT
+      [L]WAIT = [L]WAIT * 2
     Endif
   Next TRY
-  RATE = 0
-  STA = "KO"
-  If HTTPSTA = 200
-    ParseInstance OBJ With RESBODY
-    If OBJ.Contains$("/rates/" + TARGETCUR) = 0
-      TXT  = OBJ.Select$("$.rates." + TARGETCUR)
-      RATE = val(TXT)
-      STA  = "OK"
+  [L]RATE = 0
+  [L]STA = "KO"
+  If [L]HTTPSTA = 200
+    ParseInstance OBJ With [L]RESBODY
+    If OBJ.Contains$("/rates/" + [L]TARGETCUR) = 0
+      [L]TXT  = OBJ.Select$("$.rates." + [L]TARGETCUR)
+      [L]RATE = val([L]TXT)
+      [L]STA  = "OK"
     Endif
     FreeGroup OBJ
   Endif
-  Call YINTLOG_WRITE("OUT", "YFXRATES", "GET " + SUBURL, "", HTTPSTA, STA, "", RESBODY) From YINTLOGLIB
-End RATE
+  Call YINTLOG_WRITE("OUT", "YFXRATES", "GET " + [L]SUBURL, "", [L]HTTPSTA, [L]STA, "", [L]RESBODY) From YINTLOGLIB
+End [L]RATE
 ```
 
 Currency codes are safe in a URL; encode any free text placed in `SUBURL` yourself.
@@ -185,17 +185,18 @@ Currency codes are safe in a URL; encode any free text placed in `SUBURL` yourse
 ## Pagination
 
 Follow the partner's cursor or `next` link, cap the number of pages, and log each page. Walk JSON arrays
-by index until `Contains$` reports the element absent:
+with JSON pointers: the `Get$` page points to RFC 6901, where `/items/0` is the first element. No Sage
+example shows an array path, so test it on your folder:
 
 ```l4g
 # Inside a page loop; OBJ parsed from {"items":[{"id":"A1"},{"id":"A2"}],"next":"c2"}
-  I = 0
-  While OBJ.Contains$("/items/" + num$(I)) = 0
-    ITEMID = OBJ.Select$("$.items[" + num$(I) + "].id")
+  [L]I = 0
+  While OBJ.Contains$("/items/" + num$([L]I)) = 0
+    [L]R = OBJ.Get$("/items/" + num$([L]I) + "/id", [L]ITEMID)
     # process ITEMID
-    I += 1
+    [L]I += 1
   Wend
-  NEXTCURSOR = OBJ.Select$("$.next")
+  [L]NEXTCURSOR = OBJ.Select$("$.next")
   FreeGroup OBJ
   OBJ = null
 ```
@@ -250,8 +251,8 @@ See also: `web-services-integration.md`, `web-services-soap-client.md`, `builtin
 - https://online-help.sagex3.com/erp/12/en-us/Content/V7DEV/api-guide_api-asyrwebser.html
 - https://communityhub.sage.com/fr/sage-x3/f/technique/182920/x3v12-2021r2-appel-webservice-rest-avec-identification-oauth2-header-trop-court-via-asyrrestcli-exec_rest_ws (community)
 - https://communityhub.sage.com/fr/sage-x3/f/technique/217700/exec_rest_ws-et-format-json (community)
-- https://communityhub.sage.com/us/sage_x3/f/general-discussion/212042/v12-34-native-json-parser (community)
-- https://communityhub.sage.com/us/sage_x3/f/general-discussion/220325/connecting-to-an-external-rest-with-an-xml-header (community)
-- https://communityhub.sage.com/us/sage_x3/f/general-discussion/178221/exec_rest_ws-stops-responding-rest-web-service-gets-stuck (community)
-- https://www.greytrix.com/blogs/sagex3/?p=25177 (community)
+- https://communityhub.sage.com/sage-global-solutions/sage_x3/f/general-discussion/212042/v12-34-native-json-parser (community)
+- https://communityhub.sage.com/sage-global-solutions/sage_x3/f/general-discussion/220325/connecting-to-an-external-rest-with-an-xml-header (community)
+- https://communityhub.sage.com/sage-global-solutions/sage_x3/f/general-discussion/178221/exec_rest_ws-stops-responding-rest-web-service-gets-stuck (community)
+- https://www.greytrix.com/blogs/sagex3/2022/09/26/how-to-pass-bigger-value-in-header-parameter-while-executing-rest-web-services/ (community)
 - https://communityhub.sage.com/cfs-file/__key/communityserver-discussions-components-files/40/7848.04-_2D00_-REST-Web-Services.pdf (Sage BP-day deck, community-hosted)

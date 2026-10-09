@@ -5,7 +5,7 @@
 [![Validate skill](https://github.com/actouf/sage-x3-l4g/actions/workflows/validate.yml/badge.svg)](https://github.com/actouf/sage-x3-l4g/actions/workflows/validate.yml)
 [![Docs](https://img.shields.io/badge/docs-actouf.github.io-brightgreen)](https://actouf.github.io/sage-x3-l4g/)
 
-> Skill Claude pour écrire, relire et déboguer du code Sage X3 V12 L4G — classes du dictionnaire et scripts de classe, représentations, objets Classic et points d'entrée, transactions, REST Syracuse et SOAP, imports, workflows, batchs, tests AXUNIT.
+> Skill Claude pour écrire, relire et déboguer du code Sage X3 V12 L4G — classes du dictionnaire et scripts de classe, représentations, objets Classic et points d'entrée, transactions, dictionnaire de données et paramètres, REST Syracuse et SOAP, imports, workflows, pièces automatiques, batchs, tests AXUNIT.
 
 _[English version → README.md](README.md)_
 
@@ -21,11 +21,12 @@ Donne à Claude le vocabulaire, les idiomes et les conventions du L4G Sage X3 (4
 - `SKILL.md` — quand l'utiliser, discipline de vérification, modèle mental (préfixes, `fstat` / `adxuprec`, un seul niveau de transaction), idiomes V12 vs Classic, Funprog transactionnel de référence
 
 **Langage**
-- `references/language-basics.md` — types, déclarations, modes de passage, flux de contrôle, `Break`, sous-programmes, `Gosub`, `Onerrgo` / `Resume`
+- `references/language-basics.md` — types, déclarations, tableaux et `Sorta`, modes de passage, flux de contrôle, `Break`, sous-programmes, `Gosub`, `Onerrgo` / `Resume`
 - `references/database.md` — `Read` / `For` / `Filter` / `Link`, `Update … With`, `Readlock`, `Rewritebykey` et UPDTICK, `Execsql`, fstat / adxuprec, l'idiome transactionnel
 - `references/builtin-functions.md` — fonctions chaînes, dates, nombres et système (`format$`, `gdat$`, `instr`, `vireblc`, `ctrans`, `pat`, `filinfo`, `System`)
 - `references/sequential-files.md` — `Openi` / `Openo` / `Openio`, `Rdseq` / `Wrseq` / `Getseq` / `Putseq`, `Iomode`, encodages, `filpath`
-- `references/conventions-and-naming.md` — préfixes X / Y / Z, codes activité, chapitres de messages, nommage des scripts et tables
+- `references/data-dictionary.md` — tables (GESATB), champ ajouté à une table standard, index, validation, types de données (GESATY), menus locaux (TXT), tables diverses, vues SQL (GESAVW), paramètres généraux et leur lecture en L4G
+- `references/conventions-and-naming.md` — préfixes X / Y / Z, codes activité, chapitres de messages, nommage des scripts et tables, abréviations et index primaires des tables standard
 - `references/function-codes.md` — liste vérifiée des fonctions GESxxx, et codes qui n'existent pas
 
 **Modèles objet et IHM**
@@ -37,7 +38,7 @@ Donne à Claude le vocabulaire, les idiomes et les conventions du L4G Sage X3 (4
 - `references/screens-and-masks.md` — masques Classic, `[M:...]`, actions champs, `mkstat`, instructions d'écran dépréciées
 
 **Intégration**
-- `references/web-services-integration.md` — aiguillage : REST, SOAP, HTTP sortant ou fichiers, journal d'intégration, checklist de publication
+- `references/web-services-integration.md` — aiguillage : REST, SOAP, HTTP sortant, fichiers ou API GraphQL de X3 Services, journal d'intégration, checklist de publication
 - `references/web-services-rest.md` — exposer X3 en REST Syracuse (`/api1/...`, représentations, facettes, pagination, authentification)
 - `references/web-services-rest-client.md` — appeler des API HTTP / REST externes (`ASYRRESTCLI.EXEC_REST_WS`), JSON avec `ParseInstance`
 - `references/web-services-soap.md` — publier des web services SOAP Classic (GESASU, GESAWE, pools Syracuse, callContext)
@@ -45,23 +46,25 @@ Donne à Claude le vocabulaire, les idiomes et les conventions du L4G Sage X3 (4
 - `references/imports-exports.md` — modèles d'import / export (GESAOE), lancement depuis le code, échanges de fichiers
 - `references/reports-printing.md` — dictionnaire des états, destinations, impression depuis le code
 - `references/workflow-email.md` — règles workflow (GESAWA), règles d'affectation, modèles de données, envoi d'e-mails (`ASEND_MAIL`)
+- `references/accounting-automatic-journals.md` — pièces automatiques (GESGAU), formules, sous-programmes de lien et de pièce, points d'entrée CPTAUTO, tables des écritures comptables
 
 **Exploitation**
-- `references/batch-scheduling.md` — tâches batch (GESABT), tâches récurrentes (GESABA), calendriers, suivi des requêtes, reprise sur incident
+- `references/development-workflow.md` — où vivent les scripts, dictionnaire des traitements (GESADC), Safe X3 Studio (Eclipse), compilation, la boucle écrire → compiler → corriger → tester → patcher
+- `references/batch-scheduling.md` — tâches batch (GESABT), tâches récurrentes (GESABA), calendriers, suivi des requêtes, reprise sur incident, garde mono-instance par `Lock`
 - `references/personalisation-activity.md` — codes activité (GESACV), hiérarchie des dossiers, patchs (APATCH / PATCH), personnalisation
 - `references/localization.md` — messages et `mess()`, langue de connexion, formats de date et de nombre
 - `references/localization-formats.md` — devises, pays et formats d'adresse, jeux de caractères
 - `references/data-migration.md` — tables de staging, chargements idempotents, rapprochement, bascule
-- `references/debugging-traces.md` — fichiers de log (classe `ALOG` en V7+, `OUVRE_TRACE` / `ECR_TRACE` en Classic), log moteur, profileur, variables d'erreur, débogueur
+- `references/debugging-traces.md` — fichiers de log (classe `ALOG` en V7+, `OUVRE_TRACE` / `ECR_TRACE` en Classic), log moteur, variables d'erreur, débogueur
 - `references/diagnostics-postmortem.md` — incidents de production : verrous, batchs en échec, logs, modèle de rapport d'incident
 
 **Qualité**
-- `references/performance.md` — accès par index, `Link` plutôt que N+1 lectures, `Columns`, taille des transactions, SQL ensembliste
+- `references/performance.md` — profileur (`ASYRTIMING`), accès par index, `Link` plutôt que N+1 lectures, `Columns`, taille des transactions, SQL ensembliste
 - `references/security-permissions.md` — profils fonctionnels, contrôle d'accès, authentification des web services, secrets, injection
 - `references/audit-compliance.md` — table d'audit, compteurs, RGPD accès / effacement / portabilité, rétention
 - `references/unit-testing-axunit.md` — suites de tests AXUNIT (scripts `QLF*`), assertions, exécution
 - `references/code-review-checklist.md` — passe de revue structurée, signaux d'alerte classés par gravité
-- `references/common-patterns.md` — recettes Classic / cœur
+- `references/common-patterns.md` — recettes Classic / cœur et index indiquant où vit chaque recette
 - `references/common-patterns-v12.md` — recettes V12
 - `references/version-caveats.md` — comportements dépendant de la version et points à vérifier sur votre dossier
 
@@ -108,6 +111,7 @@ Le skill se déclenche tout seul. Demandez simplement :
 - « Appelle une API REST externe depuis X3 et lis une valeur dans la réponse JSON »
 - « Relis ce script L4G et dis-moi ce qui cloche »
 - « Écris un test AXUNIT pour mon Funprog YTRANSFER »
+- « Comment ajouter un champ spécifique à la table des clients sans perdre la modification au prochain patch ? »
 
 ## FAQ
 
@@ -115,7 +119,7 @@ Le skill se déclenche tout seul. Demandez simplement :
 La V12 est la cible principale ; la V7 partage le même modèle classes / représentations. Le Classic (masques, scripts d'objet `$ACTION`, SOAP) est couvert parce qu'il tourne encore en V12. Les patterns purement V6 ne le sont pas.
 
 **Pourquoi tester `fstat` plutôt que des exceptions ?**
-Les instructions base de données et fichiers ne lèvent pas d'exception : elles positionnent `[S]fstat`, et `Update` / `Delete … Where` positionnent aussi `[S]adxuprec`. Un `Update` sur une ligne absente réussit avec zéro ligne. Sans ces tests, les bugs sont silencieux.
+Les instructions base de données et fichiers ne lèvent pas d'exception : elles positionnent `[S]fstat`. `Update` positionne aussi `[S]adxuprec` et `Delete` `[S]adxdlrec`, le nombre de lignes touchées : `fstat = 0` ne prouve donc pas qu'une ligne a été modifiée. Sans ces tests, les bugs sont silencieux.
 
 **Quel niveau de patch ?**
 Les références suivent l'aide en ligne V12 et signalent ce qui dépend de la version (par exemple l'analyse JSON native). Vérifiez sur votre dossier avant de livrer ; `version-caveats.md` liste les points à contrôler.

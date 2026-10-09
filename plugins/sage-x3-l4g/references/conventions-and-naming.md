@@ -62,7 +62,8 @@ are not preserved during folder validation or migration.
 ## Standard table abbreviations
 
 Declare a table with its dictionary abbreviation and use the index names from the table dictionary.
-Checked on the table-dictionary pages (`MCD/<TABLE>.htm`):
+The abbreviation does not always derive from the table name (GACCENTRY is `[HAE]`). Checked on the
+table-dictionary pages (`MCD/<TABLE>.htm`):
 
 | Table | Abbreviation | Primary index (segments) |
 |---|---|---|
@@ -73,9 +74,13 @@ Checked on the table-dictionary pages (`MCD/<TABLE>.htm`):
 | ITMMASTER | ITM | ITM0 (ITMREF) |
 | ITMFACILIT | ITF | ITF0 (ITMREF+STOFCY) |
 | STOCK | STO | STO0 (STOFCY+STOCOU) |
-| SORDER / SORDERQ / SORDERP | SOH / SOQ / SOP | SOH0 (SOHNUM) / SOQ0 / SOP0 (SOHNUM+SOPLIN+seq) |
-| PORDER / PORDERQ | POH / POQ | POH0 (POHNUM) / POQ0 (POHNUM+POPLIN+POQSEQ) |
-| SINVOICE | SIH | SIH0 (NUM) |
+| STOJOU | STJ | STJ0 (STOFCY+UPDCOD+ITMREF-IPTDAT+MVTSEQ+MVTIND; `-` = descending) |
+| SORDER / SORDERQ / SORDERP | SOH / SOQ / SOP | SOH0 (SOHNUM) / SOQ0 (SOHNUM+SOPLIN+SOQSEQ) / SOP0 (SOHNUM+SOPLIN+SOPSEQ) |
+| SDELIVERY / SDELIVERYD | SDH / SDD | SDH0 (SDHNUM) / SDD0 (SDHNUM+SDDLIN) |
+| SINVOICE / SINVOICED | SIH / SID | SIH0 (NUM) / SID0 (NUM+SIDLIN) |
+| PORDER / PORDERQ / PORDERP | POH / POQ / POP | POH0 (POHNUM) / POQ0 (POHNUM+POPLIN+POQSEQ) / POP0 (POHNUM+POPLIN+POPSEQ) |
+| PINVOICE / PINVOICED | PIH / PID | PIH0 (NUM) / PID0 (NUM+PIDLIN) |
+| GACCENTRY / GACCENTRYD | HAE / DAE | HAE0 (TYP+NUM) / DAE0 (TYP+NUM+LIN+LEDTYP) — see `accounting-automatic-journals.md` |
 | MFGHEAD | MFG | MFG0 (MFGNUM) |
 | GACCOUNT | GAC | GAC0 (COA+ACC) |
 | FACILITY / COMPANY | FCY / CPY | FCY0 (FCY) / CPY0 (CPY) |
@@ -249,4 +254,4 @@ See also: `function-codes.md`, `personalisation-activity.md`, `v12-classes.md`, 
 - https://online-help.sagex3.com/erp/12/en-us/Content/FCT/APATCH.htm
 - https://online-help.sagex3.com/erp/12/en-us/Content/FCT/LECTRACE.htm
 - https://online-help.sagex3.com/erp/12/en-us/Content/MCD/BPCUSTOMER.htm (and the other `MCD/<TABLE>.htm` pages)
-- https://communityhub.sage.com/us/sage_x3/f/general-discussion/199401/about-adx-binary-files-in-trt-folder (community: `.src` / `.adx`)
+- https://communityhub.sage.com/sage-global-solutions/sage_x3/f/general-discussion/199401/about-adx-binary-files-in-trt-folder (community: `.src` / `.adx`)

@@ -89,9 +89,9 @@ The only public Sage page on the subject is the AIMP3 entry-point page; the call
 Subprog YPRINT_PO(YPONUM)
 Value Char YPONUM()
 Local Char YTBPAR(30)(1..20), YTBVAL(250)(1..20)
-  YTBPAR(1) = "commandedeb" : YTBVAL(1) = YPONUM : # parameter codes as defined in GESARP
-  YTBPAR(2) = "commandefin" : YTBVAL(2) = YPONUM
-  Call ETAT("YPOH", "YPDF", "", 0, "", YTBPAR, YTBVAL) From AIMP3
+  [L]YTBPAR(1) = "commandedeb" : [L]YTBVAL(1) = [L]YPONUM : # parameter codes as defined in GESARP
+  [L]YTBPAR(2) = "commandefin" : [L]YTBVAL(2) = [L]YPONUM
+  Call ETAT("YPOH", "YPDF", "", 0, "", [L]YTBPAR, [L]YTBVAL) From AIMP3
 End
 ```
 
@@ -149,7 +149,7 @@ $YPARAM
   # Gosub label: it shares AIMP3's locals (PARAMETRE, NBPAR, SERVER), which a Subprog could
   # not set; the unique Y-prefixed name keeps this Local from clashing with a standard one
   Local Char YAIMP3_VAL(250)
-  Call GETPARAM("__DESTINATION", NBPAR, PARAMETRE, [L]YAIMP3_VAL) From ETAT
+  Call GETPARAM("__DESTINATION", [L]NBPAR, [L]PARAMETRE, [L]YAIMP3_VAL) From ETAT
   If [L]YAIMP3_VAL <> "1" : Return : Endif      : # printer output only
   If [F:ARP]RPTCOD = "YPOH"
     [L]SERVER = "YPRTSRV01"                      : # dedicated print server for this report
@@ -186,6 +186,6 @@ See also: `entry-points.md`, `workflow-email.md`, `batch-scheduling.md`, `import
 - https://online-help.sagex3.com/erp/12/en-us/Content/OBJ/ADC_AIMP3.htm
 - https://online-help.sagex3.com/erp/12/en-us/Content/FCT/GESADI.htm
 - https://matteo72.wordpress.com/2012/11/17/x3-4gl-procedure-to-launch-a-report/ (ETAT arguments, community)
-- https://communityhub.sage.com/us/sage_x3/f/general-discussion/187612/automatically-print-a-report-in-a-network-directory
+- https://communityhub.sage.com/sage-global-solutions/sage_x3/f/general-discussion/187612/automatically-print-a-report-in-a-network-directory
 - https://www.rklesolutions.com/blog/sage-x3-crystal-report-parameters
 - https://communityhub.sage.com/sage-global-solutions/sage_x3/f/general-discussion/228097/print-files-to-an-s3-bucket

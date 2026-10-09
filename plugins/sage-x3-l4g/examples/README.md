@@ -19,8 +19,8 @@ database operation, `adxlog` transaction idiom).
 
 How they fit together: `YTRFPOST.src` posts staging rows with `YTRANSFER` from `YACCLIB.src`, which
 `QLFYAC_TRANSFER.src` tests; `YIMPLAUNCH.src` can run the import template of the object whose
-controls live in `SPEYCU.src`; `common-patterns.md` and `common-patterns-v12.md` show the same
-recipes in short form.
+controls live in `SPEYCU.src`; `common-patterns.md` and `common-patterns-v12.md` show short
+excerpts and point back here.
 
 ## Using these
 

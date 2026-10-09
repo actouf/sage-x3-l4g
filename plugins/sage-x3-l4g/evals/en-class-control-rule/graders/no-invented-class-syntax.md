@@ -1,6 +1,6 @@
 ---
 type: regex
-pattern: '^\s*(Endclass|Public\s+Method|Class\s+Y\w+\s*$)'
+pattern: '^\s*(Endclass|Endmethod|(Public|Private)\s+(Method|Property|Function)\b|Method\s+\w+\s*\(|Class\s+Y\w+(\s+Extends\s+\w+)?\s*$)'
 flags: im
 match: not_contains
 ---

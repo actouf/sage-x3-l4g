@@ -4,6 +4,47 @@ All notable changes to the `sage-x3-l4g` skill. Format based on [Keep a Changelo
 
 ## [Unreleased]
 
+## [1.1.0] — 2026-10-09
+
+Completes the skill with the data dictionary, the development loop and automatic journals; adds the self-check feedback loop recommended for Agent Skills; removes code duplicated between references and examples; measures the skill against a no-skill baseline in the evals.
+
+### Added
+- **New references**
+  - `data-dictionary.md` — tables (GESATB), a specific field on a standard table, indexes, validation (VALDICO), data types (GESATY / GESATYC) and their actions, local menus (TXT, COMBOS), miscellaneous tables (GESADV / GESADI, ATABDIV), SQL views (GESAVW), general parameters (GESADP / ADPVAL) and reading them in L4G (`APARAM.AGETVALCHAR`…, Classic `PARAM From ADOVAL`).
+  - `development-workflow.md` — where scripts live, script dictionary (GESADC), Safe X3 Studio (Eclipse), what is and is not documented about compiling, and the write → compile → fix → test → patch loop Claude follows.
+  - `accounting-automatic-journals.md` — automatic journals (GESGAU): header, lines, accounting codes, formulas and `AFNC` functions, link / journal subprograms, CPTAUTO and SUBGAU entry points, accounting entry tables (GACCENTRY = `[HAE]`), and what the help leaves undocumented.
+- **Targeted additions**
+  - `language-basics.md` — `Sorta` (syntax, `[S]indice` from 0, not stable, errors 8 / 10 / 50).
+  - `batch-scheduling.md` — single-instance guard with a symbol `Lock` / `Unlock` taken outside any transaction.
+  - `conventions-and-naming.md` — table cheat sheet extended with STOJOU, SDELIVERY(D), SINVOICED, PORDERP, PINVOICE(D) and GACCENTRY(D) (`[HAE]` / `[DAE]`), every index checked on its `MCD/<TABLE>.htm` page; SORDERQ / SORDERP indexes made explicit.
+  - `web-services-integration.md` — the Sage X3 Services GraphQL API (packages GESAPACK, node bindings GESANODEB) and where it stops being 4GL.
+  - `function-codes.md` — ADPVAL, COMBOS, GENMENULOC, VALDICO, GESATYC, GESATBP, GESAPACK, GESANODEB, a new Accounting section (GESGAU, GESDSP), and ADOVAL / ADOTRT / VALTRT / GESAPINOD in the "no public page" table.
+- **SKILL.md** — a copyable "Self-check before you answer" checklist, a final "compile and test" step when writing code, and `license: MIT` in the frontmatter (it ships in the claude.ai zip).
+- **Evals** — 10 new positive cases (data dictionary, parameter reading, compiling, automatic journals, substring replacement, silent import, batch tasks, log files, `mess()`, REST URLs) and 2 negative ones (Sage Intacct, Oracle Forms): 28 cases.
+- **`scripts/validate.sh`** — scans the L4G of SKILL.md too, fails on L4G inside an untagged code fence, checks that every example is listed in SKILL.md and `examples/README.md`, rejects a marketplace entry that overrides `plugin.json`, accepts `references/…` paths in cross-links, and extends the deny-list (`AFNC.PARAMG`, `Exec Sql`, `GDEV.DEVISE`, `FORMAT_ADDR`, `ASYRMAILAPI`, `BPCNUM0`-style index names, `/api/x3/`, non-existent GESxxx codes…).
+
+### Changed
+- **SKILL.md** — `description` rewritten (1022 characters) to cover the data dictionary, compiling and automatic journals; keywords that no longer fit moved to "When to use", which no longer repeats the description; every path is relative to the skill root (`references/…`, `examples/…`); reference table rows updated (profiler in `performance.md`, table abbreviations in `conventions-and-naming.md`).
+- **Evals** — graders tightened: LLM grader for the unnamed pasted code, transaction-ownership LLM grader and a wider inverted-guard regex for the transactional Funprog (renamed `fr-transactional-funprog`, new prompt that no longer matches the SKILL.md example), no `Trbegin` / wider invented-syntax check for the class rule, JSON parsing check for outgoing REST, stricter `ENVMAIL` / `Readseq` / entry-point / AXUNIT patterns; "must not contain" graders match code lines only, so an answer that warns against `ENVMAIL` in prose is not failed. CONTRIBUTING documents the full run with the no-skill baseline (`--ablation with-without`, 3 runs, threshold 0.8).
+- **`marketplace.json`** — the plugin entry no longer sets `description` and `keywords`, which overrode `plugin.json` for users; `plugin.json` description and keywords updated.
+- **CI** — Claude Code pinned to 2.1.295 for `claude plugin validate --strict`.
+- **`CONTRIBUTING.md` / `CLAUDE.md`** — `.src` is the documented source extension (`.trt` dropped); a new reference comes with an eval case.
+- **One copy of each piece of code.** `common-patterns.md` keeps the recipes that combine several mechanisms and indexes the others where they are explained (304 → 182 lines); `database.md` points to `examples/YACCLIB.src` instead of repeating YTRANSFER (312 → 290 lines); `unit-testing-axunit.md` shows an excerpt of `examples/QLFYAC_TRANSFER.src` instead of the whole suite; `debugging-traces.md` shows the ALOG life cycle and moves the Eclipse set-up to `development-workflow.md`.
+- **House style everywhere** — explicit `[L]` prefixes on about 420 local variables and parameters in references and examples, `()` on every ALOG method call, `Rewritebykey` spelling, `adxuprec` checks added after single-row `Update`s in `performance.md` and `data-migration.md`, the `TRANS_OPEN = adxlog` idiom in the AXUNIT suite helpers, L4G code fences tagged `l4g`.
+- **Sources** — 24 redirected URLs replaced by their final address (Community Hub `/us/` → `/sage-global-solutions/`, Greytrix, RKL), two 404 directory URLs in `function-codes.md` replaced.
+
+### Fixed
+- `sequential-files.md` — `Openo` with a positive length truncates only when it is smaller than the file (`4gl_openo`); the behaviour of `Rdseq` with fewer variables than fields is undocumented.
+- `database.md` — `Columns … Extended` covers `Readlock` as well as `Read`; the "`Update` matching no row returns fstat 0" claim is restated from what the help documents (`adxuprec` / `adxdlrec` row counts); `clalev` is deprecated since V7.
+- `language-basics.md` — the help documents `End RETURN_VALUE` for a `Funprog`; it does not say a bare `End` is an error.
+- `web-services-rest-client.md` — `Select$` paths follow "the XML XPath design", not JSONPath; pagination walks arrays with JSON pointers through `Get$` (RFC 6901, linked from the help) instead of an undocumented `$.items[0]` index; `EXEC_REST_WSCLB` no longer described as "not yet" in the help.
+- `unit-testing-axunit.md` — unverified claims removed (`RUN_TESTSUITE` returning a Clbfile, `LOG_CLASS` "from patch 6").
+- `version-caveats.md` — new rows: representation script ranks (100 vs 1000), `TYPVAL` at folder level, `FERME_TRACE` documented on the AREADLOG page; committing inside a `For` loop listed as undocumented behaviour to test (`examples/YTRFPOST.src` now says so).
+- `entry-points.md` — the `MODTRTEXP` → `AEXPPROCESS` move stated where the entry point is discussed.
+- `v12-classes-representations.md` gains a `## Gotchas` section; time-sensitive "still" / "not yet" phrasing removed.
+- SKILL.md no longer claims `Inpbox` coverage; the profiler is listed under `performance.md`, not `debugging-traces.md` (SKILL.md, READMEs, `index.md`).
+- README / README_FR FAQ — `Delete` sets `adxdlrec`, not `adxuprec`.
+
 ## [1.0.0] — 2026-10-09
 
 Verified rewrite. An audit against Sage's online help showed that most of the 0.x content described APIs, keywords and function codes that do not exist in X3. Every reference has been rewritten from the documentation, now cites its sources, and the validator rejects the invented identifiers. The skill is also brought in line with the Agent Skills and Claude Code plugin specifications.
@@ -174,7 +215,8 @@ Initial release.
 - README with install instructions for Claude.ai, Desktop, and Code.
 - MIT license.
 
-[Unreleased]: https://github.com/actouf/sage-x3-l4g/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/actouf/sage-x3-l4g/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/actouf/sage-x3-l4g/releases/tag/v1.1.0
 [1.0.0]: https://github.com/actouf/sage-x3-l4g/releases/tag/v1.0.0
 [0.5.1]: https://github.com/actouf/sage-x3-l4g/releases/tag/v0.5.1
 [0.5.0]: https://github.com/actouf/sage-x3-l4g/releases/tag/v0.5.0

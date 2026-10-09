@@ -26,9 +26,9 @@ slow, or when reviewing loops over large tables. Statement syntax and the transa
 ```l4g
 Local Decimal YT0, YMS
 Local Char YLOGNAME(250)
-YT0 = val(timestamp$)
-Call YCHECKBAL(YLOGNAME) From YACCLIB
-YMS = val(timestamp$) - YT0
+[L]YT0 = val(timestamp$)
+Call YCHECKBAL([L]YLOGNAME) From YACCLIB
+[L]YMS = val(timestamp$) - [L]YT0
 ```
 
 **Profiler.** `func ASYRTIMING.START(FILE, GOSUB_FLAG)` / `func ASYRTIMING.STOP(CONTEXT, FILE, GOSUB_FLAG, LOGFILE)`.
@@ -38,9 +38,9 @@ Gosub/Call with call count, total milliseconds and percentage of the run, sorted
 ```l4g
 Local Integer STAT
 Local Char YLOGNAME(250), YPROFILE(250)
-STAT = func ASYRTIMING.START("", 1)
-Call YCHECKBAL(YLOGNAME) From YACCLIB
-STAT = func ASYRTIMING.STOP(GACTX, "", 1, YPROFILE) : # YPROFILE = generated report file
+[L]STAT = func ASYRTIMING.START("", 1)
+Call YCHECKBAL([L]YLOGNAME) From YACCLIB
+[L]STAT = func ASYRTIMING.STOP(GACTX, "", 1, [L]YPROFILE) : # YPROFILE = generated report file
 ```
 
 **Other tools.**
@@ -59,23 +59,23 @@ Keys are declared on the table in the dictionary (GESATB) and are the only acces
 Local File BPCUSTOMER [BPC]
 Local Integer YNB
 Local Char YCODE(20)
-YCODE = "C001"
+[L]YCODE = "C001"
 # 1. One row by its key
 Read [BPC]BPC0 = [L]YCODE
 If fstat = [V]CST_ANOREC
-  YNB = 0
+  [L]YNB = 0
 Endif
 # 2. Key range: From/To on the key segments
 For [BPC]BPC0 From "C000" To "C999"
-  YNB += 1
+  [L]YNB += 1
 Next
 # 3. Filter sent to the database (becomes LIKE 'J%')
 For [BPC]BPC0 Where pat(BPCNAM, "J*") <> 0
-  YNB += 1
+  [L]YNB += 1
 Next
 # 4. No ordering needed: let the database choose
 For [BPC]reckey Where pat(BPCNAM, "J*") <> 0
-  YNB += 1
+  [L]YNB += 1
 Next
 ```
 
@@ -110,7 +110,7 @@ transmitted to the database): call it before and put its result in a local varia
 ## Fetch fewer columns: Columns
 
 `Read`/`For` issue `select *` by default. `Columns [ABV](COL1, COL2)` restricts the columns loaded (and those written
-back by `Rewrite`/`RewriteByKey`; `Write` still writes the whole `[F]` class). It applies to `For`; it applies to
+back by `Rewrite`/`Rewritebykey`; `Write` still writes the whole `[F]` class). It applies to `For`; it applies to
 `Read`/`Readlock` only with `Extended`. `Columns [ABV]` restores all columns. The restriction is scoped to the
 `Local File` nesting level.
 
@@ -119,7 +119,7 @@ Local File BPARTNER [BPR]
 Local Integer YNB
 Columns [BPR](BPRNUM, BPRNAM)
 For [BPR]
-  YNB += 1
+  [L]YNB += 1
 Next
 Columns [BPR]
 ```
@@ -133,14 +133,14 @@ Local Integer YNB
 For [BPC]BPC0
   Read [AUS]CODUSR = [F:BPC]CREUSR
   If fstat = [V]CST_AOK
-    YNB += 1
+    [L]YNB += 1
   Endif
 Next
 # One joined SELECT. ~= inner join (faster, drops customers without user), = left outer join
 Link [BPC] With [AUS]CODUSR ~= [BPC]CREUSR As [YBU]
 Columns [YBU]([BPC]BPCNUM, [BPC]BPCNAM, [AUS]CODUSR)
 For [YBU]
-  YNB += 1
+  [L]YNB += 1
 Next
 ```
 
@@ -165,11 +165,11 @@ One statement beats a loop of single-row statements:
 Local Integer DBTYPE
 Local Char YDB(1), YREQ(250)
 Local Decimal YTOTAL
-DBTYPE = fmet GACTX.APARAM.AGETVALNUM([V]CST_ALEVFOLD, "", "TYPDBA")
-YDB = string$(DBTYPE = 1, "O") + string$(DBTYPE = 2, "S")
-YREQ = "select sum(Y_BALANCE_0) from YACCOUNT"
-For (Decimal TOTAL) From YDB Sql YREQ As [YSUM]
-  YTOTAL = [F:YSUM]TOTAL
+[L]DBTYPE = fmet GACTX.APARAM.AGETVALNUM([V]CST_ALEVFOLD, "", "TYPDBA")
+[L]YDB = string$([L]DBTYPE = 1, "O") + string$([L]DBTYPE = 2, "S")
+[L]YREQ = "select sum(Y_BALANCE_0) from YACCOUNT"
+For (Decimal TOTAL) From [L]YDB Sql [L]YREQ As [YSUM]
+  [L]YTOTAL = [F:YSUM]TOTAL
 Next
 ```
 
@@ -184,7 +184,7 @@ logic (rules, entry points, controls); database errors are raised as runtime err
   lockwait = N` bounds the wait (seconds); the default comes from `[S]lockwait`.
 - `For … With Lock` is discouraged by Sage: Oracle locks the whole selection at once, SQL Server row by row.
 - Symbol locks (`Lock`, table APLLCK) serialise users and create contention; V7-style code uses optimistic
-  `RewriteByKey` with UPDTICK — `database.md`.
+  `Rewritebykey` with UPDTICK — `database.md`.
 - Keep `Trbegin … Commit` free of user dialogs, HTTP calls, file waits and `Sleep`.
 - A long batch should commit in small units, never one transaction around everything:
 
@@ -201,17 +201,17 @@ Local Shortint TRANS_OPEN
   If [L]TRANS_OPEN <> 0 : End : Endif : # cannot chunk inside the caller's transaction
   Columns [YACC](Y_ACCNUM)
   For [YACC] Where Y_BALANCE < 0
-    N += 1
-    YCODES(N) = [F:YACC]Y_ACCNUM
+    [L]N += 1
+    [L]YCODES([L]N) = [F:YACC]Y_ACCNUM
   Next
   Columns [YACC]
-  For I = 1 To N
+  For [L]I = 1 To [L]N
     Trbegin [YACC]
-    Update [YACC] Where Y_ACCNUM = YCODES(I) and Y_BALANCE < 0 With Y_BLOCKED = 1
-    If fstat = 0
+    Update [YACC] Where Y_ACCNUM = [L]YCODES([L]I) and Y_BALANCE < 0 With Y_BLOCKED = 1
+    If fstat or adxuprec <> 1
+      If adxlog = 1 : Rollback : Endif : # fstat 1/3 on Update: the engine already rolled back
+    Else
       Commit
-    Elsif adxlog = 1
-      Rollback : # fstat 1/3 on Update: the engine already rolled back
     Endif
   Next I
 End
@@ -237,7 +237,7 @@ the optimizer would adapt from statistics, and a database upgrade can make it ha
 | `For … With Lock` / Readlock-Rewrite loop for a uniform change | `Update … Where … With` |
 | One transaction around a whole batch | Short transactions per unit (above) |
 | Frequent sort on a non-indexed order | Key in GESATB matching the order |
-| New code relying on symbol `Lock` | Optimistic `RewriteByKey` |
+| New code relying on symbol `Lock` | Optimistic `Rewritebykey` |
 | Hints added "just in case" | Remove; measure |
 | Parameter or setup reads inside a hot loop | Read once before the loop |
 

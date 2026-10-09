@@ -79,7 +79,7 @@ with X, Y or Z, two scripts cannot share a rank. For your own class `YCUSTLOG` t
   one event are invisible in the next, and tables opened in an event are closed when it ends, so
   declare `Local File` at the start of each event label.
 - V11 split the old `$METHODS`/`$ACTION` dispatch into these four labels; `$ACTION` was kept for
-  compatibility and announced as deprecated in V12. Some Sage how-to pages still show the old layout
+  compatibility and announced as deprecated in V12. Some Sage how-to pages show the old layout
   (`$METHODS` + `Case ACTION` for events): do not copy it into new code.
 
 ## Property rules
@@ -231,9 +231,9 @@ Local Integer  YSTA
   YLOG = NewInstance C_YCUSTLOG AllocGroup Null
   [L]YSTA = fmet YLOG.AINIT()           : # INIT rules + AINIT event
   If [L]YSTA < [V]CST_AERROR
-    YLOG.YLOGNUM = LOGNUM
-    YLOG.BPCNUM  = BPC                  : # CONTROL / PROPAGATE fire here
-    YLOG.YAMOUNT = AMOUNT
+    YLOG.YLOGNUM = [L]LOGNUM
+    YLOG.BPCNUM  = [L]BPC               : # CONTROL / PROPAGATE fire here
+    YLOG.YAMOUNT = [L]AMOUNT
     [L]YSTA = fmet YLOG.AINSERT()       : # controls, events, insert
   Endif
   FreeGroup YLOG

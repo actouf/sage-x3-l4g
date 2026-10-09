@@ -9,9 +9,7 @@
     {
       "name": "sage-x3-l4g",
       "source": "./plugins/sage-x3-l4g",
-      "description": "Writes, reviews, and debugs Sage X3 V12 L4G code — classes, representations, entry points, transactions, REST/SOAP, imports, workflows, batch, AXUNIT.",
-      "category": "development",
-      "keywords": ["sage-x3", "l4g", "4gl", "erp"]
+      "category": "development"
     }
   ]
 }

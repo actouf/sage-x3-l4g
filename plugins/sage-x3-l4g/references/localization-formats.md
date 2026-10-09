@@ -209,4 +209,4 @@ See also: `localization.md`, `function-codes.md`, `builtin-functions.md`, `seque
 - https://online-help.sagex3.com/erp/12/en-us/Content/V7DEV/4gl_ctrans.html
 - https://online-help.sagex3.com/erp/12/en-us/Content/V7DEV/4gl_adxium.html
 - https://online-help.sagex3.com/erp/12/en-us/Content/V7DEV/4gl_strencode.html
-- https://communityhub.sage.com/us/sage_x3/b/sageerp_x3_product_support_blog/posts/reviewing-the-currency-rate-history (community: Currency rates screen path)
+- https://communityhub.sage.com/sage-global-solutions/sage_x3/b/sageerp_x3_product_support_blog/posts/reviewing-the-currency-rate-history (community: Currency rates screen path)

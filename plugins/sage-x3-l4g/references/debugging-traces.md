@@ -46,29 +46,20 @@ All methods are called with `fmet`:
 | `AFLUSHLOG()` | Flush buffered lines to disk (user parameter `NBTRABUFF` sets the buffer size). |
 | `AENDLOG()` | Write, close the file. Returns 0. |
 
+The life cycle of a log, from `YCHECKBAL` in `examples/YACCLIB.src` (full subprogram there):
+
 ```l4g
-##############################################################
-# YCHECKBAL - flag negative balances in YACCOUNT, return the log name (script YACCLIB)
-##############################################################
-Subprog YCHECKBAL(LOGNAME)
-Variable Char LOGNAME()
-Local File YACCOUNT [YACC]
 Local Instance YLOG Using C_ALOG
-Local Integer OK, NBNEG
+Local Integer OK
   YLOG = NewInstance C_ALOG AllocGroup Null
-  OK = fmet YLOG.ABEGINLOG("YCHECKBAL - contrôle des soldes")
-  LOGNAME = fmet YLOG.AGETNAME
-  OK = fmet YLOG.APUTLINE("User " + GACTX.USER - "folder " + GACTX.AFOLDER, [V]CST_AINFO)
+  [L]OK = fmet YLOG.ABEGINLOG("YCHECKBAL - contrôle des soldes")
+  [L]LOGNAME = fmet YLOG.AGETNAME()     : # LOGNAME: Variable parameter returned to the caller
+  [L]OK = fmet YLOG.APUTLINE("User " + GACTX.USER - "folder " + GACTX.AFOLDER, [V]CST_AINFO)
   For [YACC] Where Y_BALANCE < 0
-    NBNEG += 1
-    OK = fmet YLOG.APUTLINE("Solde négatif : " + [F:YACC]Y_ACCNUM, [V]CST_AWARNING)
+    [L]OK = fmet YLOG.APUTLINE("Solde négatif : " + [F:YACC]Y_ACCNUM, [V]CST_AWARNING)
   Next
-  If NBNEG > 0
-    OK = fmet YLOG.APUTLINE(num$(NBNEG) - "account(s) in error", [V]CST_AERROR)
-  Endif
-  OK = fmet YLOG.AENDLOG
+  [L]OK = fmet YLOG.AENDLOG()
   FreeGroup YLOG
-End
 ```
 
 Call `AFLUSHLOG` after an important error line if the process might die before `AENDLOG`, but not on every line
@@ -138,15 +129,15 @@ Funprog YRATIO(NUM, DEN, ERRMSG)
 Value Decimal NUM, DEN
 Variable Char ERRMSG()
 Local Decimal RES
-  ERRMSG = ""
+  [L]ERRMSG = ""
   Onerrgo YRATIO_ERR
-  RES = NUM / DEN
+  [L]RES = [L]NUM / [L]DEN
   Onerrgo
-End RES
+End [L]RES
 
 $YRATIO_ERR
-  ERRMSG = "Erreur" - num$(errn) - errmes$(errn) - "ligne" - num$(errl) - "script" - errp - errm
-  RES = 0
+  [L]ERRMSG = "Erreur" - num$(errn) - errmes$(errn) - "ligne" - num$(errl) - "script" - errp - errm
+  [L]RES = 0
 Resume
 ```
 
@@ -175,10 +166,10 @@ directory given by `ADXDIR`. `ST = closelog()` stops it, `getlogname()` returns 
 ```l4g
 Local Integer ST
 Local Char YLOGNAME(250), YENGINELOG(250)
-ST = openlog(1 + 4) : # call stack + Read/For requests
-Call YCHECKBAL(YLOGNAME) From YACCLIB
-ST = closelog()
-YENGINELOG = getlogname()
+[L]ST = openlog(1 + 4) : # call stack + Read/For requests
+Call YCHECKBAL([L]YLOGNAME) From YACCLIB
+[L]ST = closelog()
+[L]YENGINELOG = getlogname()
 ```
 
 **From the administration pages (no code change).**
@@ -203,12 +194,8 @@ dbgmode = 1
 Dbgaff
 ```
 
-Set-up (community-reported, Sage Community Hub): on the X3 user (GESAUS), parameter chapter Supervisor, group DEV,
-set `AECLIDBG` = Yes, `AECLIDBGTR` = Yes, `AECLIMAC` = web server name, `AECLIPRT` = port, `AECLIPSE` = Yes; in
-Eclipse open the Debug perspective, "Attach process", pick your session, then set breakpoints by double-clicking the
-gutter. Sage's security guide lists the Node "debug proxy" port 9514 as **development environments only**; a
-"Debugger not active" error usually means that port is blocked (community-reported).
-The X3 Builder Studio VS Code extension manages X3 Builder projects; it is not a 4GL debugger.
+Installing Safe X3 Studio, connecting it to a folder, the user parameters that make Eclipse the debugger
+(`AECLIDBG`…) and the debug proxy are in `development-workflow.md`.
 
 ## System variables worth dumping
 
@@ -236,7 +223,7 @@ The X3 Builder Studio VS Code extension manages X3 Builder projects; it is not a
 - Never write secrets or full personal data into traces: TRA files can be opened by any user authorised on
   LECTRACE / AREADLOG.
 
-See also: `diagnostics-postmortem.md`, `performance.md`, `language-basics.md`, `database.md`,
+See also: `development-workflow.md`, `diagnostics-postmortem.md`, `performance.md`, `language-basics.md`, `database.md`,
 `web-services-integration.md`, `v12-classes.md`, `unit-testing-axunit.md`.
 
 ## Sources
@@ -252,11 +239,8 @@ See also: `diagnostics-postmortem.md`, `performance.md`, `language-basics.md`, `
 - https://online-help.sagex3.com/erp/12/en-us/Content/V7DEV/administration-reference_x3-session-logs.html
 - https://online-help.sagex3.com/erp/12/en-us/Content/V7DEV/administration-reference_sessions-information.html
 - https://online-help.sagex3.com/erp/12/en-us/Content/V7DEV/4gl_dbgmode.html , …/4gl_dbgaff.html
-- https://online-help.sagex3.com/erp/12/en-us/Content/V7DEV/getting-started_security-best-practices.html
 - https://online-help.sagex3.com/erp/12/en-us/Content/V7DEV/developer-guide_context-parameters.html
 - https://online-help.sagex3.com/erp/12/en-us/Content/V7DEV/how-to_how-to-get-information-relating-to-the-current-context.html
 - https://online-help.sagex3.com/erp/12/en-us/Content/V7DEV/4gl_stat1.html , …/4gl_nomap.html , …/4gl_fstat.html , …/4gl_adxuid.html
-- https://greytrix.com/blogs/sagex3/2024/02/27/how-to-customize-the-trace-log-file-for-errors-and-success-messages (community)
-- https://communityhub.sage.com/us/sage_x3/f/general-discussion/104603/display-a-trace-file (community)
-- https://communityhub.sage.com/sage-global-solutions/sage_x3/b/sage-x3-support-insights-ame/posts/how-to-set-up-safe-x3-studio-for-eclipse-for-debugging (community)
-- https://communityhub.sage.com/us/sage_x3/f/announcements/257592/now-available-new-sage-x3-builder-developer-studio-vscode-extension-1-0-3 (community)
+- https://www.greytrix.com/blogs/sagex3/2024/02/27/how-to-customize-the-trace-log-file-for-errors-and-success-messages/ (community)
+- https://communityhub.sage.com/sage-global-solutions/sage_x3/f/general-discussion/104603/display-a-trace-file (community)

@@ -35,7 +35,7 @@ Local Instance OBJ Using OBJECT
   [L]HCOD(1) = "Accept"
   [L]HVAL(1) = '"application/json"'           : # header values are JSON constants
   [L]WAIT = 2
-  For TRY = 1 To 3
+  For [L]TRY = 1 To 3
     [L]HTTPSTA = func ASYRRESTCLI.EXEC_REST_WS("YFXRATES", "GET", [L]SUBURL,
     & [L]PCOD, [L]PVAL, [L]HCOD, [L]HVAL, "{}", 0, "", [L]RESHEAD, [L]RESBODY)
     If [L]HTTPSTA <> 429 and [L]HTTPSTA < 500

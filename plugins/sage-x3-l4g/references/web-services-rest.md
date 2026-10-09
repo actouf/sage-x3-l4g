@@ -29,7 +29,7 @@ returned can differ from the one submitted.
 
 ## URL anatomy
 
-```
+```text
 https://<server>:<port>/api1/x3/erp/<ENDPOINT>/<CLASS>?representation=<REP>.$<facet>&<options>
 https://<server>:<port>/api1/x3/erp/<ENDPOINT>/<CLASS>('<KEY>')?representation=<REP>.$<facet>
 ```
@@ -48,7 +48,7 @@ Facets: `$query` (list), `$details` (one record), `$edit` (update/delete), `$cre
 
 ## Query: list, filter, sort, page
 
-```
+```http
 GET /api1/x3/erp/SEED/BPCUSTOMER?representation=BPCUSTOMER.$query&count=50
     &where=left(BPCNAM,4) eq 'Test'&orderBy=BPCNAM desc,BPCNUM asc
 ```
@@ -66,7 +66,7 @@ absent — never rebuild the URL yourself. URL-encode spaces and quotes in `wher
 
 ## Read one resource
 
-```
+```http
 GET /api1/x3/erp/SEED/BPCUSTOMER('C0001')?representation=BPCUSTOMER.$details
 ```
 
@@ -89,7 +89,7 @@ changed properties; to touch existing lines, send their `$uuid` (read with `$edi
 API-requests page also shows creation as a POST on `.$edit`. ETag-based concurrency control from SData
 2.0 is not available in this Web API.
 
-```
+```http
 POST /api1/x3/erp/SEED/YSOT?representation=YSOT.$create
 Authorization: Basic <base64(login:password)>
 Content-Type: application/json

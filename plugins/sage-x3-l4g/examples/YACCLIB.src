@@ -31,7 +31,7 @@ Local Shortint TRANS_OPEN
   If [L]AMOUNT <= 0 or [L]FROM_ACC = [L]TO_ACC : End [V]CST_AERROR : Endif
   [L]TRANS_OPEN = adxlog
   If [L]TRANS_OPEN = 0 : Trbegin [YACC] : Endif
-  # Missing account and insufficient balance both give fstat 0 with adxuprec 0
+  # Missing account or insufficient balance: no row updated, adxuprec = 0
   Update [YACC] Where Y_ACCNUM = [L]FROM_ACC and Y_BALANCE >= [L]AMOUNT
   & With Y_BALANCE -= [L]AMOUNT
   If fstat or adxuprec <> 1
@@ -60,16 +60,16 @@ Local File YACCOUNT [YACC]
 Local Instance YLOG Using C_ALOG
 Local Integer OK, NBNEG
   YLOG = NewInstance C_ALOG AllocGroup Null
-  OK = fmet YLOG.ABEGINLOG("YCHECKBAL - contrôle des soldes")
-  LOGNAME = fmet YLOG.AGETNAME
-  OK = fmet YLOG.APUTLINE("User " + GACTX.USER - "folder " + GACTX.AFOLDER, [V]CST_AINFO)
+  [L]OK = fmet YLOG.ABEGINLOG("YCHECKBAL - contrôle des soldes")
+  [L]LOGNAME = fmet YLOG.AGETNAME()
+  [L]OK = fmet YLOG.APUTLINE("User " + GACTX.USER - "folder " + GACTX.AFOLDER, [V]CST_AINFO)
   For [YACC] Where Y_BALANCE < 0
-    NBNEG += 1
-    OK = fmet YLOG.APUTLINE("Solde négatif : " + [F:YACC]Y_ACCNUM, [V]CST_AWARNING)
+    [L]NBNEG += 1
+    [L]OK = fmet YLOG.APUTLINE("Solde négatif : " + [F:YACC]Y_ACCNUM, [V]CST_AWARNING)
   Next
-  If NBNEG > 0
-    OK = fmet YLOG.APUTLINE(num$(NBNEG) - "account(s) in error", [V]CST_AERROR)
+  If [L]NBNEG > 0
+    [L]OK = fmet YLOG.APUTLINE(num$([L]NBNEG) - "account(s) in error", [V]CST_AERROR)
   Endif
-  OK = fmet YLOG.AENDLOG
+  [L]OK = fmet YLOG.AENDLOG()
   FreeGroup YLOG
 End

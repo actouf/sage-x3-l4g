@@ -21,6 +21,6 @@ jobs:
 
       - name: Validate manifests with Claude Code
         run: |
-          npm install -g @anthropic-ai/claude-code@2.1.280
+          npm install -g @anthropic-ai/claude-code@2.1.295
           claude plugin validate . --strict
           claude plugin validate plugins/sage-x3-l4g --strict

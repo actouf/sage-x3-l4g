@@ -50,7 +50,7 @@ Return
 Subprog YTRF_BATCH
 Local Integer YNBOK, YNBKO
 Local Char    YLOGNAME(250)
-  Call YTRF_POST(YNBOK, YNBKO, YLOGNAME) From YTRFPOST
+  Call YTRF_POST([L]YNBOK, [L]YNBKO, [L]YLOGNAME) From YTRFPOST
 End
 
 ##############################################################
@@ -73,7 +73,8 @@ Local Integer  STGID, STA, ST, LOGST, FATAL
   Endif
   YLOG = NewInstance C_ALOG AllocGroup Null
   [L]LOGST = fmet YLOG.ABEGINLOG("YTRFPOST - transferts en attente")
-  LOGNAME = fmet YLOG.AGETNAME()
+  [L]LOGNAME = fmet YLOG.AGETNAME()
+  # Per-row Commit inside the loop: test that the cursor survives on your database (version-caveats.md)
   For [YTS]YTS0 Where Y_STA = 1
     [L]STGID = [F:YTS]Y_STGID
     Trbegin [YTU]

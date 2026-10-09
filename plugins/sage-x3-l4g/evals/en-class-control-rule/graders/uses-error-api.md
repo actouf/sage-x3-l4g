@@ -1,5 +1,5 @@
 ---
 type: regex
-pattern: 'ASETERROR'
+pattern: 'ASETERROR\s*\('
 flags: i
 ---

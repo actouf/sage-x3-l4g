@@ -198,4 +198,4 @@ See also: `conventions-and-naming.md`, `function-codes.md`, `entry-points.md`, `
 - https://online-help.sagex3.com/erp/12/en-us/Content/V7DEV/ui-definition_personalization.html
 - https://online-help.sagex3.com/erp/12/en-us/Content/V7DEV/administration-reference_personalization-management.html
 - https://online-help.sagex3.com/erp/12/en-us/Content/V7DEV/administration-reference_index.html
-- https://communityhub.sage.com/us/sage_x3/f/general-discussion/254832/v12p37-x3-trt-subsoha1-adx-1367-error-6-variable-non-existent-spjt (community-reported)
+- https://communityhub.sage.com/sage-global-solutions/sage_x3/f/general-discussion/254832/v12p37-x3-trt-subsoha1-adx-1367-error-6-variable-non-existent-spjt (community-reported)

@@ -179,9 +179,9 @@ Local Integer ISO_WEEK, LATE_DAYS
 ```l4g
 Local Char    OUTPUT(250)(1..50)
 Local Integer NB
-  System OUTPUT = "ls -l" - filpath("TMP", "", "")
+  System [L]OUTPUT = "ls -l" - filpath("TMP", "", "")
   [L]NB = stat1                              : # lines returned; negative if the command failed
-  If [L]NB > dim(OUTPUT) : [L]NB = dim(OUTPUT) : Endif
+  If [L]NB > dim([L]OUTPUT) : [L]NB = dim([L]OUTPUT) : Endif
 ```
 
 - Forms: `System CMD` (output ignored), `System VAR = CMD` (one stdout line per array element; extra

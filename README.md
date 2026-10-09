@@ -5,7 +5,7 @@
 [![Validate skill](https://github.com/actouf/sage-x3-l4g/actions/workflows/validate.yml/badge.svg)](https://github.com/actouf/sage-x3-l4g/actions/workflows/validate.yml)
 [![Docs](https://img.shields.io/badge/docs-actouf.github.io-brightgreen)](https://actouf.github.io/sage-x3-l4g/)
 
-> Claude skill for writing, reviewing, and debugging Sage X3 V12 L4G code — dictionary classes and class scripts, representations, Classic objects and entry points, transactions, Syracuse REST and SOAP, imports, workflows, batch, AXUNIT tests.
+> Claude skill for writing, reviewing, and debugging Sage X3 V12 L4G code — dictionary classes and class scripts, representations, Classic objects and entry points, transactions, data dictionary and parameters, Syracuse REST and SOAP, imports, workflows, automatic journals, batch, AXUNIT tests.
 
 _[Version française → README_FR.md](README_FR.md)_
 
@@ -21,11 +21,12 @@ Gives Claude the vocabulary, idioms and conventions of Sage X3 L4G (4GL / X3 scr
 - `SKILL.md` — when to use, verification discipline, mental model (prefixes, `fstat` / `adxuprec`, one transaction level), V12-vs-Classic idioms, canonical transactional Funprog
 
 **Core language**
-- `references/language-basics.md` — types, declarations, parameter modes, control flow, `Break`, subprograms, `Gosub`, `Onerrgo` / `Resume`
+- `references/language-basics.md` — types, declarations, arrays and `Sorta`, parameter modes, control flow, `Break`, subprograms, `Gosub`, `Onerrgo` / `Resume`
 - `references/database.md` — `Read` / `For` / `Filter` / `Link`, `Update … With`, `Readlock`, `Rewritebykey` and UPDTICK, `Execsql`, fstat / adxuprec, the transaction idiom
 - `references/builtin-functions.md` — string, date, number and system functions (`format$`, `gdat$`, `instr`, `vireblc`, `ctrans`, `pat`, `filinfo`, `System`)
 - `references/sequential-files.md` — `Openi` / `Openo` / `Openio`, `Rdseq` / `Wrseq` / `Getseq` / `Putseq`, `Iomode`, encodings, `filpath`
-- `references/conventions-and-naming.md` — X / Y / Z prefixes, activity codes, message chapters, script and table naming
+- `references/data-dictionary.md` — tables (GESATB), a field on a standard table, indexes, validation, data types (GESATY), local menus (TXT), miscellaneous tables, SQL views (GESAVW), general parameters and reading them in L4G
+- `references/conventions-and-naming.md` — X / Y / Z prefixes, activity codes, message chapters, script and table naming, standard table abbreviations and primary indexes
 - `references/function-codes.md` — verified list of GESxxx functions, and codes that do not exist
 
 **Object models and UI**
@@ -37,7 +38,7 @@ Gives Claude the vocabulary, idioms and conventions of Sage X3 L4G (4GL / X3 scr
 - `references/screens-and-masks.md` — Classic masks, `[M:...]`, field actions, `mkstat`, deprecated screen instructions
 
 **Integration**
-- `references/web-services-integration.md` — router: REST vs SOAP vs outgoing HTTP vs files, integration log, publishing checklist
+- `references/web-services-integration.md` — router: REST vs SOAP vs outgoing HTTP vs files vs the X3 Services GraphQL API, integration log, publishing checklist
 - `references/web-services-rest.md` — exposing X3 through Syracuse REST (`/api1/...`, representations, facets, paging, authentication)
 - `references/web-services-rest-client.md` — calling external HTTP / REST APIs (`ASYRRESTCLI.EXEC_REST_WS`), JSON with `ParseInstance`
 - `references/web-services-soap.md` — publishing Classic SOAP web services (GESASU, GESAWE, Syracuse pools, callContext)
@@ -45,23 +46,25 @@ Gives Claude the vocabulary, idioms and conventions of Sage X3 L4G (4GL / X3 scr
 - `references/imports-exports.md` — import / export templates (GESAOE), running them from code, file exchange patterns
 - `references/reports-printing.md` — reports dictionary, destinations, printing from code
 - `references/workflow-email.md` — workflow rules (GESAWA), allocation rules, data models, sending e-mail (`ASEND_MAIL`)
+- `references/accounting-automatic-journals.md` — automatic journals (GESGAU), formulas, link / journal subprograms, CPTAUTO entry points, accounting entry tables
 
 **Operations**
-- `references/batch-scheduling.md` — batch tasks (GESABT), recurring tasks (GESABA), calendars, request monitoring, restart safety
+- `references/development-workflow.md` — where scripts live, script dictionary (GESADC), Safe X3 Studio (Eclipse), compiling, the write → compile → fix → test → patch loop
+- `references/batch-scheduling.md` — batch tasks (GESABT), recurring tasks (GESABA), calendars, request monitoring, restart safety, single-instance guard with `Lock`
 - `references/personalisation-activity.md` — activity codes (GESACV), folder hierarchy, patches (APATCH / PATCH), personalisation
 - `references/localization.md` — messages and `mess()`, connection language, date and number formatting
 - `references/localization-formats.md` — currencies, countries and address formats, character sets
 - `references/data-migration.md` — staging tables, idempotent loaders, reconciliation, cutover
-- `references/debugging-traces.md` — log files (`ALOG` class in V7+ code, `OUVRE_TRACE` / `ECR_TRACE` in Classic code), engine log, profiler, error variables, debugger
+- `references/debugging-traces.md` — log files (`ALOG` class in V7+ code, `OUVRE_TRACE` / `ECR_TRACE` in Classic code), engine log, error variables, debugger
 - `references/diagnostics-postmortem.md` — production incidents: locks, failed batches, logs, incident report template
 
 **Quality**
-- `references/performance.md` — index-driven access, `Link` vs N+1 reads, `Columns`, transaction size, set-based SQL
+- `references/performance.md` — profiler (`ASYRTIMING`), index-driven access, `Link` vs N+1 reads, `Columns`, transaction size, set-based SQL
 - `references/security-permissions.md` — function profiles, access control, web-service authentication, secrets, injection
 - `references/audit-compliance.md` — audit table pattern, sequence numbers, GDPR access / erasure / portability, retention
 - `references/unit-testing-axunit.md` — AXUNIT test suites (`QLF*` scripts), assertions, running tests
 - `references/code-review-checklist.md` — structured review pass, red flags ranked by blast radius
-- `references/common-patterns.md` — Classic / core recipes
+- `references/common-patterns.md` — Classic / core recipes and an index of where each recipe lives
 - `references/common-patterns-v12.md` — V12 recipes
 - `references/version-caveats.md` — version-dependent behaviour and what to verify on your folder
 
@@ -108,6 +111,7 @@ The skill triggers on its own. Ask Claude normally:
 - "Call an external REST API from X3 and read a value from the JSON response"
 - "Relis ce script L4G et dis-moi ce qui cloche"
 - "Write an AXUNIT test for my YTRANSFER Funprog"
+- "How do I read a site-level general parameter in a V12 script?"
 
 ## FAQ
 
@@ -115,7 +119,7 @@ The skill triggers on its own. Ask Claude normally:
 V12 is the primary target; V7 shares the same class / representation model. Classic constructs (masks, `$ACTION` object scripts, SOAP) are covered because they still run in V12. Pure V6 patterns are not.
 
 **Why check `fstat` instead of using exceptions?**
-Database and file instructions don't raise exceptions: they set `[S]fstat`, and `Update` / `Delete … Where` also set `[S]adxuprec`. An `Update` on a missing row succeeds with zero rows. Skipping these checks produces silent bugs.
+Database and file instructions don't raise exceptions: they set `[S]fstat`. `Update` also sets `[S]adxuprec` and `Delete` sets `[S]adxdlrec`, the number of rows touched, so `fstat = 0` alone does not prove that a row was changed. Skipping these checks produces silent bugs.
 
 **Which patch level?**
 References follow the V12 online help and say so when a feature is version-dependent (for example native JSON parsing). Verify on your folder before shipping; `version-caveats.md` lists what to check.

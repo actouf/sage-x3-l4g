@@ -32,10 +32,12 @@ else
       fail "marketplace.json $FIELD is missing or a placeholder"
     fi
   done
-  if [[ -n "$(jq -r '.plugins[] | select(.name=="sage-x3-l4g") | .version // empty' "$MK")" ]]; then
-    fail "marketplace.json must not set a version (plugin.json is the single source)"
+  # A field set on the marketplace entry overrides plugin.json for users: keep plugin.json the only source.
+  OVERRIDES=$(jq -r '.plugins[] | select(.name=="sage-x3-l4g") | keys[] | select(. == "version" or . == "description" or . == "keywords")' "$MK")
+  if [[ -n "$OVERRIDES" ]]; then
+    fail "marketplace.json entry overrides plugin.json: $(echo $OVERRIDES)"
   else
-    ok "marketplace entry has no version"
+    ok "marketplace entry does not override version / description / keywords"
   fi
 fi
 
@@ -121,11 +123,16 @@ while IFS= read -r TARGET; do
   TARGET=${TARGET//\`/}
   B=$(basename "$TARGET")
   case "$B" in README.md|CHANGELOG.md|CONTRIBUTING.md|CLAUDE.md|README_FR.md|SKILL.md) continue ;; esac
-  if ! find "$PLUGIN" -name "$B" | grep -q .; then
+  if [[ "$TARGET" == */* ]]; then
+    FOUND=$([[ -e "$PLUGIN/$TARGET" ]] && echo 1 || true)   # path relative to the skill root
+  else
+    FOUND=$(find "$PLUGIN" -name "$B" | head -1)
+  fi
+  if [[ -z "$FOUND" ]]; then
     fail "backticked reference not found: $TARGET"
     MISSING=$((MISSING + 1))
   fi
-done < <(grep -rhoE '`([a-zA-Z0-9_.-]+\.md|examples/[a-zA-Z0-9_.-]+\.(src|trt))`' "$PLUGIN" | sort -u)
+done < <(grep -rhoE '`((references/)?[a-zA-Z0-9_.-]+\.md|examples/[a-zA-Z0-9_.-]+\.(src|trt))`' "$PLUGIN" | sort -u)
 while IFS= read -r LINK; do
   [[ -e "$LINK" ]] || { fail "index/README link not found: $LINK"; MISSING=$((MISSING + 1)); }
 done < <(grep -hoE '\]\([^)#:]+\)' index.md README.md README_FR.md | sed -E 's/^\]\(//; s/\)$//' | sort -u)
@@ -135,10 +142,16 @@ echo
 echo "→ Checking examples"
 COUNT=$( (find "$EXDIR" -maxdepth 1 \( -name "*.src" -o -name "*.trt" \) 2>/dev/null || true) | wc -l | tr -d ' ')
 [[ "$COUNT" -ge 1 ]] && ok "$COUNT example file(s) in $EXDIR" || fail "$EXDIR has no .src or .trt files"
+for F in "$EXDIR"/*.src "$EXDIR"/*.trt; do
+  [[ -e "$F" ]] || continue
+  B=$(basename "$F")
+  grep -q "examples/$B" "$SKILL" || fail "$B: not listed in SKILL.md"
+  grep -q "$B" "$EXDIR/README.md" || fail "$B: not listed in examples/README.md"
+done
 
 echo
 echo "→ Checking L4G code (deny-list of non-existent keywords / APIs, indentation)"
-# Emit "file:line:code" for every line of ```l4g blocks in references and every line of examples,
+# Emit "file:line:code" for every line of ```l4g blocks in SKILL.md and references and every line of examples,
 # with comments stripped, then grep for tokens that do not exist in X3 4GL.
 extract_code() {
   awk '
@@ -150,7 +163,7 @@ extract_code() {
       if (line ~ /^[ \t]*#/) next
       sub(/:[ \t]*#.*$/, "", line)
       print FILENAME ":" FNR ":" line
-    }' "$REFDIR"/*.md "$EXDIR"/*.src "$EXDIR"/*.trt 2>/dev/null
+    }' "$SKILL" "$REFDIR"/*.md "$EXDIR"/*.src "$EXDIR"/*.trt 2>/dev/null
 }
 CODE=$(extract_code || true)
 DENY=(
@@ -158,6 +171,10 @@ DENY=(
   ':[[:space:]]*(Public|Private)[[:space:]]' 'ECRAN_TRACE' '\bENVMAIL' 'AFNC\.JSONGET'
   '\breplace\$' '\blen\$' '\bstrip\$' '\bupper\$' '\blower\$'
   '\bIf[[:space:]]+(\[S\])?adxlog[[:space:]]*($|:)' ':[[:space:]]*For\b.*\bOrder[[:space:]]+By\b'
+  '\bDecr\b' 'Onerrgo[[:space:]]+0\b' '\bExec[[:space:]]+Sql\b' 'From[[:space:]]+GESNUM\b'
+  'AFNC\.(PARAMG|JSONSET|XMLGET)' 'ASYSTEM\.ParseJson' 'ASYRMAILAPI' 'GDEV\.DEVISE' '\bFORMAT_ADDR\b'
+  '\b(BPCNUM|ITMREF|SOHNUM)0\b' '\[GACC\]' '/api/x3/'
+  '\b(GESAPL|GESAOI|GESAUT|GESAML|GESAPA|GESVAL|GESCUR|GESAWS|GESAWT|GESALOCK)\b'
 )
 DENY_HITS=0
 for PAT in "${DENY[@]}"; do
@@ -180,7 +197,20 @@ BAD_INDENT=$(awk '
   FILENAME ~ /\.md$/ && /^```l4g/ { flush(); blk=FILENAME ":" FNR; inblk=1; next }
   FILENAME ~ /\.md$/ && /^```/    { if (inblk) flush(); inblk=0; next }
   inblk && /^ +[^ &]/ { match($0, /^ +/); if (minind == 0 || RLENGTH < minind) minind = RLENGTH }
-  END { flush() }' "$REFDIR"/*.md "$EXDIR"/*.src "$EXDIR"/*.trt 2>/dev/null || true)
+  END { flush() }' "$SKILL" "$REFDIR"/*.md "$EXDIR"/*.src "$EXDIR"/*.trt 2>/dev/null || true)
+# L4G hidden in an untagged fence escapes every check above: require ```l4g.
+UNTAGGED=$(awk '
+  FNR==1 { inblk=0 }
+  /^```/ {
+    if (!inblk) { inblk=1; untag=($0 ~ /^```[[:space:]]*$/); start=FNR; next }
+    inblk=0; next
+  }
+  inblk && untag && /(Trbegin|fstat|\[F:|\[L\]|Subprog |Funprog )/ { print FILENAME ":" start; untag=0 }
+' "$SKILL" "$REFDIR"/*.md)
+if [[ -n "$UNTAGGED" ]]; then
+  fail "L4G code in a fence without the l4g tag:"
+  printf '%s\n' "$UNTAGGED" | head -10 | sed 's/^/      /'
+fi
 if [[ -n "$BAD_INDENT" ]]; then
   fail "L4G blocks not using 2-space indentation:"
   printf '%s\n' "$BAD_INDENT" | head -10 | sed 's/^/      /'

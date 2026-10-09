@@ -13,7 +13,7 @@ commits row by row. Read this before scheduling anything or writing a long-runni
 - [Scheduling (GESABA, GESABC)](#scheduling-gesaba-gesabc)
 - [Batch controller (Syracuse)](#batch-controller-syracuse)
 - [Monitoring and logs](#monitoring-and-logs)
-- [Restart safety and pacing](#restart-safety-and-pacing)
+- [Restart safety and pacing](#restart-safety-and-pacing) (single-instance guard with `Lock`)
 - [Gotchas](#gotchas)
 - [Sources](#sources)
 
@@ -187,6 +187,30 @@ process that opens one classic session per request.
   a run that completed with rejects (Warning status) — check on your patch which value displays as
   Warning before relying on it in monitoring.
 
+**Single-instance guard.** Two requests of the same task must not work on the same rows. A symbol lock
+is a named mutex: `Lock` it **outside any transaction** (inside one, no status is returned and the
+engine waits) with `lockwait = 0`, test `fstat` (0 = locked, 1 = held elsewhere, and then nothing in
+the list is locked), and `Unlock` it on every exit path. The lock is a row of the table named by
+`adxtlk` (APLLCK by default) that stays until `Unlock`; `Commit` / `Rollback` do not release a symbol
+locked outside a transaction, and `Unlock` does not set `fstat`. Locked symbols: VERSYMB
+(`diagnostics-postmortem.md`).
+
+```l4g
+Subprog YTRF_BATCH_ONCE
+Local Integer YNBOK, YNBKO
+Local Char    YLOGNAME(250)
+  Lock YTRFPOST With lockwait = 0               : # no transaction open here
+  If fstat                                      : # 1 = another run holds the symbol
+    End
+  Endif
+  Call YTRF_POST([L]YNBOK, [L]YNBKO, [L]YLOGNAME) From YTRFPOST
+  Unlock YTRFPOST
+End
+```
+
+If the work can raise a runtime error, arm `Onerrgo` so that the handler also runs `Unlock`
+(`language-basics.md`).
+
 ## Gotchas
 - Single-user (MONO) tasks are not executed if the folder cannot switch to single-user mode;
   community-reported: they block other tasks while running.
@@ -215,6 +239,7 @@ See also: `database.md`, `debugging-traces.md`, `workflow-email.md`, `imports-ex
 - https://online-help.sagex3.com/erp/12/en-us/Content/MODEL/act_traitement.htm
 - https://online-help.sagex3.com/erp/12/en-us/Content/V7DEV/administration-reference_batch-server.html
 - https://online-help.sagex3.com/erp/12/en-us/Content/V7DEV/4gl_sleep.html
+- https://online-help.sagex3.com/erp/12/en-us/Content/V7DEV/4gl_lock.html (and 4gl_unlock, 4gl_lockwait)
 - https://online-help.sagex3.com/erp/12/en-us/Content/V7DEV/4gl_update.html
 - https://online-help.sagex3.com/erp/12/en-us/Content/V7DEV/4gl_rollback.html
 - https://online-help.sagex3.com/erp/12/en-us/Content/V7DEV/4gl_call.html
