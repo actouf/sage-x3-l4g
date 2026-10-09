@@ -1,6 +1,6 @@
 ---
 type: regex
-pattern: '(Call|func)\s+ECRAN_TRACE'
-flags: i
+pattern: '^\s*Call\s+ECRAN_TRACE\b|=\s*func\s+(\w+\.)?ECRAN_TRACE\b'
+flags: im
 match: not_contains
 ---

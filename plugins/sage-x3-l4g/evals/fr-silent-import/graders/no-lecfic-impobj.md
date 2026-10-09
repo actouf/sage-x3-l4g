@@ -1,6 +1,6 @@
 ---
 type: regex
-pattern: 'Call\s+LECFIC.{0,80}From\s+IMPOBJ'
-flags: i
+pattern: '^\s*Call\s+LECFIC.{0,80}From\s+IMPOBJ'
+flags: im
 match: not_contains
 ---
