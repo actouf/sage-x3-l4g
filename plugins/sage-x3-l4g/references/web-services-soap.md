@@ -1,223 +1,212 @@
-# SOAP web services — publishing from X3
+# Classic SOAP web services — publishing X3 subprograms and objects
 
-Classic SOAP / AWS (`GESAWS`) is still fully supported in V12 and remains the most common integration surface in production X3 shops — metadata-driven, stable across versions, supports complex parameter types better than REST, and partners with deployed SOAP clients rarely want to switch.
+How to expose a 4GL subprogram or a Classic object as a SOAP web service in V12: declaration (GESASU),
+publication (GESAWE), the Syracuse side (host, Classic SOAP pool), the generic `CAdxWebServiceXmlCC`
+endpoint, call context, XML parameters, authentication, responses and debugging. For calling an
+external SOAP service from X3 see `web-services-soap-client.md`; for choosing SOAP vs REST see
+`web-services-integration.md`.
 
-This file covers the **server side** (publishing a SOAP service from X3). For calling an external SOAP service from L4G, see `web-services-soap-client.md`. For the REST side, REST → JSON consumption, and the protocol comparison, see `web-services-rest.md`. For cross-cutting integration concerns (file exchange, TLS, integration logging), see `web-services-integration.md`.
+## Contents
+- [When SOAP is the right surface](#when-soap-is-the-right-surface)
+- [1. Write the subprogram](#1-write-the-subprogram)
+- [2. Declare it in GESASU](#2-declare-it-in-gesasu)
+- [3. Publish it in GESAWE](#3-publish-it-in-gesawe)
+- [4. Syracuse side: host and Classic SOAP pool](#4-syracuse-side-host-and-classic-soap-pool)
+- [Calling the service](#calling-the-service)
+- [Authentication](#authentication)
+- [Response: status and messages](#response-status-and-messages)
+- [Debugging](#debugging)
+- [Gotchas](#gotchas)
+- [Sources](#sources)
 
-## Publishing a SOAP web service (classic)
+## When SOAP is the right surface
 
-The lifecycle is: write the subprogram → declare it in `GESAWE` → let the engine generate the WSDL → callers invoke via the SOAP endpoint, routed through the AWS pool.
+Sage positions SOAP for modules still on the Classic interface (objects, masks, subprograms); entities
+rebuilt on classes and representations are exposed through the REST Web API (`web-services-rest.md`).
+SOAP services are RPC/encoded, use the same format as V6, and run in dedicated Classic sessions held by
+a Syracuse pool. A web service is either a **subprogram** (its parameters become the service fields) or
+an **object** + transaction (its screen fields become the service fields).
 
-### 1. Create the subprogram
+## 1. Write the subprogram
+
+No user is in front of a web-service session: return errors through output parameters instead of
+`Infbox` / `Errbox` (deprecated Classic UI instructions).
 
 ```l4g
-##############################################################
-# YWS_CHECK_STOCK — returns stock for an item code
-##############################################################
-Subprog YWS_CHECK_STOCK(ITMREF, QTY, STATUS)
-Value    Char    ITMREF()
-Variable Decimal QTY                     # out
-Variable Char    STATUS()                # out — "OK" / "KO_<reason>"
-
-    Local File ITMMASTER [ITM], STOCK [STO]
-
-    # Always validate first — services bypass entry-transaction checks
-    If ITMREF = ""
-        STATUS = "KO_EMPTY_ITMREF"
-        QTY = 0
-        End
-    Endif
-
-    Read [ITM]ITMREF0 = ITMREF
-    If fstat
-        STATUS = "KO_UNKNOWN_ITEM"
-        QTY = 0
-        End
-    Endif
-
-    QTY = 0
-    For [STO] Where ITMREF = [F:ITM]ITMREF
-        QTY += [F:STO]QTYSTU
-    Next
-    STATUS = "OK"
+# Script YWSBPC - published as web service YWSBPC
+Subprog YWS_BPCINFO(CUSTCODE, CUSTNAME, RETSTA, RETMSG)
+Value    Char    CUSTCODE()
+Variable Char    CUSTNAME()
+Variable Integer RETSTA        : # 1 = OK, 0 = error
+Variable Char    RETMSG()
+Local File BPCUSTOMER [BPC]
+  Raz CUSTNAME, RETMSG
+  RETSTA = 0
+  If CUSTCODE = ""
+    RETMSG = "CUSTCODE is mandatory"          : # literal for brevity — use mess() in real code
+    End
+  Endif
+  Read [BPC]BPC0 = CUSTCODE
+  If fstat
+    RETMSG = "Unknown customer " + CUSTCODE   : # literal for brevity — use mess() in real code
+    End
+  Endif
+  CUSTNAME = [F:BPC]BPCNAM
+  RETSTA = 1
 End
 ```
 
-### 2. Publish it in `GESAWE` (web service exposition)
+Writes follow the transaction idiom in `database.md`; log the call with `YINTLOG_WRITE`
+(`web-services-integration.md`).
 
-Go to **Administration → Web services → Classic SOAP web services**. Create a publication with:
+## 2. Declare it in GESASU
 
-| Field | Value |
-|-------|-------|
-| Code | `YWS_CHECK_STOCK` (the service name clients will use) |
-| Description | Human-readable; appears in the WSDL |
-| Type | `GOSUB` (subprogram) |
-| Module | Activity code governing the service (e.g. `YINT`) |
-| Access code | ACL on who can invoke |
-| Script | The `.src` filename containing the subprogram |
-| Subprogram | The actual `Subprog` name |
+The Subprograms dictionary (GESASU) is what makes a subprogram eligible for web-service generation.
 
-Then for each parameter, declare a line in the detail grid:
+| Field | Use |
+|---|---|
+| File (PRG) / Subprograms (SUBPRG) | Script and subprogram name |
+| Activity code (CODACT) | X/Y/Z activity code for custom elements |
+| Web services (WEBS) | Check box: the subprogram can be generated as a web service |
+| Function (FONCTION) | Ticked for a `Funprog` (called by `func`), cleared for a `Subprog` |
+| Parameters grid | Code (10 chars), Type (Char, Integer, Decimal, Date, Local menu, Clob, Blob), Dim., Argument type (by address = `Variable`, by value = `Value`) |
 
-| Column | Meaning |
-|--------|---------|
-| Rank | Position in the signature (1, 2, 3…) — **must match the L4G order** |
-| Name | XML element name in the SOAP body |
-| Dimension | `0` = scalar, `1` = 1-D array, `2` = 2-D |
-| Type | `CHAR`, `DECIMAL`, `INTEGER`, `DATE`, `CLBFILE` |
-| Length | For `CHAR` only |
-| I/O | `0` = in, `1` = out, `2` = in/out |
-| Description | Appears as XML comment in the WSDL |
+The **Parameter Definitions** action analyses the subprogram and fills code, type and argument type;
+you complete titles and dimensions. **Option / Verification** checks grid vs source. The
+**Publication** button (active when "Web services" is ticked) publishes the subprogram directly.
 
-**Save → Validate** — the engine generates the WSDL. If validation fails, the error usually points to a mismatch between the `GESAWE` parameter list and the `Subprog` signature (count, order, or type).
+## 3. Publish it in GESAWE
 
-### 3. Invoke
+| Field | Use |
+|---|---|
+| Publication name (PUBLI) | The `publicName` callers send |
+| Type (TYPOBJ) | Object or sub-program |
+| Object (OBJET) / Transaction (VARIANTE) / Invisible fields | Object publications |
+| Script (PRG) / Subprograms (SUBPRG) | Sub-program publications |
+| Mapping tab | Groups, fields, type, length, dimension, mandatory flag, min/max, pattern; select/unselect and rename groups |
 
-The SOAP endpoint is:
+The **Publication** button generates the wrapper program (`WJ` + publication name) and the XML/XSD
+descriptions (**XML view**, **XSD view**). **Publication / Global publication** republishes in bulk.
+Republish after any signature change.
 
-```
-http://<host>:8124/soap-generic/syracuse/collaboration/soap-generic-x3:CAdxWebServiceXmlCC?wsdl
-```
+## 4. Syracuse side: host and Classic SOAP pool
 
-The port and path depend on your Syracuse install. The WSDL exposes a `run` operation — clients package the call like this:
+- **Host** — the host record's *Number of web services child processes* defaults to 0; until it is
+  set, every call fails with HTTP 500 `No web services accepted`. Each pool is duplicated per web
+  services child process.
+- **Classic SOAP pool** (administration page `soapClassicPool`; tester and pool lists are under
+  Administration > Administration > Web Services, community-reported path):
+
+| Field | Meaning (Sage) |
+|---|---|
+| Alias | Pool name, sent as `poolAlias` in every call context |
+| Auto start / Stopped manually | Start with Syracuse and restart after failure / stop only manually |
+| Endpoint | X3 endpoint (folder) used for every request |
+| X3 runtime tags | Restrict the runtimes the pool can connect to |
+| Locale / User | Language and user for channel initialisation; the call context can change them |
+| Maximum size | Max clients per node.js process; a new client starts only when all are busy |
+| Initialization size | Clients created at start per process; above 8, start/stop may time out |
+| Unused timeout (mn) | Default 20: idle channels stop, down to the initialization size |
+| Life timeout (mn) | Default 720: channels are recycled after this lifetime |
+| Queue timeout (mn) | Requests queued longer are rejected with an error |
+
+**Start/Update** applies size, endpoint, locale or user changes to existing channels; it fails if the
+host is not set up with dedicated web sessions. Pools can be driven by REST (Basic or bearer auth):
+`POST /api1/syracuse/collaboration/syracuse/soapClassicPools(alias eq 'AWS')/$service/start` (also
+`/$service/stop`, `.../soapClassicPools/$service/startAll` and `stopAll`). The licence does not cap
+channel count; it meters exchanged volume (`WSSIZELIMIT`, `WSPERIOD`, `WSGRACELIMIT`,
+`WSGRACESLOWDOWN`).
+
+## Calling the service
+
+- Endpoint: `http://<server>:<port>/soap-generic/syracuse/collaboration/syracuse/CAdxWebServiceXmlCC`
+- WSDL: `http://<server>:<port>/soap-wsdl/syracuse/collaboration/syracuse/CAdxWebServiceXmlCC?wsdl`
+  (namespace `http://www.adonix.com/WSS`). It describes the generic operations only; per-service
+  layouts come from `getDescription`.
+- Operations: `run` (subprogram), `query` (object left list, `listSize`), `read`, `save` (create),
+  `modify`, `delete`, `getDescription` — the tester lists twelve operations (community-reported).
+
+| `callContext` element | Use |
+|---|---|
+| `codeLang` | X3 language code (FRA, ENG); optional if the `Accept-Language` header (ISO) is sent |
+| `poolAlias` | Mandatory: pool Alias |
+| `poolId` | Optional: force one client, e.g. to debug with breakpoints on that process |
+| `requestConfig` | `&`-separated: `adxwss.trace.on=on`, `adxwss.optreturn=JSON` (default XML), `adxwss.beautify=true` |
+| `codeUser`, `password` | Deprecated, no longer used |
 
 ```xml
-<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
-  <soap:Body>
-    <run xmlns="http://www.adonix.com/WSS">
-      <callContext>
-        <codeLang>FRA</codeLang>
-        <poolAlias>WSPOOL</poolAlias>
+<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+    xmlns:wss="http://www.adonix.com/WSS">
+  <soapenv:Header/>
+  <soapenv:Body>
+    <wss:run soapenv:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">
+      <callContext xsi:type="wss:CAdxCallContext">
+        <codeLang xsi:type="xsd:string">ENG</codeLang>
+        <poolAlias xsi:type="xsd:string">YWSPOOL</poolAlias>
+        <poolId xsi:type="xsd:string"></poolId>
+        <requestConfig xsi:type="xsd:string">adxwss.optreturn=XML</requestConfig>
       </callContext>
-      <publicName>YWS_CHECK_STOCK</publicName>
-      <inputXml>
-        <![CDATA[<PARAM>
-          <FLD NAME="ITMREF">ITM001</FLD>
-        </PARAM>]]>
-      </inputXml>
-    </run>
-  </soap:Body>
-</soap:Envelope>
+      <publicName xsi:type="xsd:string">YWSBPC</publicName>
+      <inputXml xsi:type="xsd:string"><![CDATA[<PARAM>
+        <GRP ID="GRP1"><FLD NAME="CUSTCODE">C0001</FLD></GRP>
+      </PARAM>]]></inputXml>
+    </wss:run>
+  </soapenv:Body>
+</soapenv:Envelope>
 ```
 
-Output parameters come back serialized in the response `resultXml`.
+Parameter XML: scalar fields are `<FLD NAME="...">` inside a `<GRP ID="...">`; array parameters become
+`<TAB ID="..." SIZE="n">` with one `<LIN NUM="i">` per row (community-reported for subprograms; Sage's
+`save` example uses the same `TAB`/`LIN NUM`/`FLD NAME` shape). Group IDs come from the GESAWE Mapping
+tab — copy them from `getDescription` or the tester. Dates travel as `YYYYMMDD` (Sage's `save`
+example: `20330127`).
 
-### Complex parameter types — 1-D and 2-D arrays
+## Authentication
 
-SOAP in X3 handles structured data via **table-type parameters** (dimension 1 = vector, dimension 2 = matrix). Declare in `GESAWE` with `Dimension = 1` or `2`, then on the L4G side:
+The X3 user is resolved from the Syracuse user's endpoint login map, not from the call context. Send an
+`Authorization` header: `Basic <base64(login:password)>` or a bearer token (Sage's examples show both).
+Authentication modes are enabled in Syracuse (`web-services-rest.md`, Authentication); Sage X3 Online
+accepts OAuth2 only.
 
-```l4g
-##############################################################
-# YWS_BATCH_RESERVE — reserves stock for a list of items
-# ITMREFS and QTYS are 1-D arrays, RESULTS is out
-##############################################################
-Subprog YWS_BATCH_RESERVE(ITMREFS, QTYS, RESULTS, STATUS)
-Value    Char    ITMREFS()(1..100)          # 1-D array, up to 100 items
-Value    Decimal QTYS(1..100)
-Variable Char    RESULTS()(1..100)           # parallel out array
-Variable Char    STATUS()
+## Response: status and messages
 
-Local Integer I
-For I = 1 To 100
-    If ITMREFS(I) = "" : Exitfor : Endif
-    # per-item logic — populate RESULTS(I) with "OK" or "KO_<reason>"
-    ...
-Next
-STATUS = "OK"
-End
-```
+HTTP 200 only means the request was authenticated and well-formed. Read the body: `status` = 1 (ran
+without error) or 0 (errors occurred), `messages` (array of `type` + `message`), `resultXml` (output
+parameters, XML or JSON per `adxwss.optreturn`), `technicalInfos` (durations, pool entry,
+`traceRequest` when tracing is on). HTTP 401 = authentication failed.
 
-Clients pass the array as repeated `<FLD>` elements under a named `<TAB>`:
+## Debugging
 
-```xml
-<TAB DIM="100" NAME="ITMREFS" SIZE="30">
-  <LIN><FLD>ITM001</FLD></LIN>
-  <LIN><FLD>ITM002</FLD></LIN>
-</TAB>
-```
+| Symptom | Cause (documented) | Fix |
+|---|---|---|
+| HTTP 500 `No web services accepted` | Host web services child processes = 0 | Set it on the host record |
+| Pool start fails, host setup message | Host lacks dedicated web sessions | Fix the host, then Start/Update |
+| HTTP 200, `status` 0, `No classic web service pool match to 'X'` | Wrong `poolAlias` or pool stopped | Check Alias, start the pool |
+| HTTP 401 `Authentication failed...` / `Error 30: Invalid token` | Bad Basic credentials / bad bearer token | Fix credentials or token |
+| Request rejected after waiting | All channels busy beyond Queue timeout | Raise Maximum size or shorten the service |
+| Timeout while starting/stopping the pool | Initialization size above 8 | Lower it or raise the request timeout |
+| Input XML refused / deserialization error | Arrays sent as scalars, wrong group IDs (community-reported) | Rebuild from `getDescription` |
+| Need detail of the server-side run | — | `requestConfig` `adxwss.trace.on=on`; `poolId` + debugger |
 
-Declare the max dimension honestly — if you write `1..100` in L4G but the partner sends 200 entries, only the first 100 reach you and the rest are silently dropped.
+## Gotchas
 
-### AWS pool configuration (`GESAPO`) — performance
+- `codeUser` in old clients is silently ignored — the authenticated Syracuse user decides.
+- Changing a subprogram signature requires GESASU update + GESAWE republication, and breaks deployed
+  clients: publish a new name instead.
+- Pool settings changes (size, endpoint, locale, user) need **Start/Update** to reach running channels.
+- An HTTP 200 with `status` 0 is a failure; always test the body status and `messages`.
 
-Every SOAP call needs a pre-initialized X3 session. The engine keeps these in a **pool** declared in `GESAPO` (Administration → Web services → Pools):
+See also: `web-services-integration.md`, `web-services-soap-client.md`, `web-services-rest.md`,
+`security-permissions.md`, `function-codes.md`.
 
-| Setting | Effect |
-|---------|--------|
-| Alias | Pool name (callers reference it in `callContext.poolAlias`) |
-| Min/Max size | Pre-allocated and cap — sets concurrency ceiling |
-| User | X3 user the service runs as (ACL scope) |
-| Folder | Which folder the session is bound to |
-| Activity | The activity code chain active in the session |
-
-**Sizing rule of thumb:** min ≥ peak-concurrent-callers, max ≤ 2 × min (higher caps invite thrashing). Short-lived services (<500ms) tolerate a smaller pool than long ones.
-
-A cold pool start takes seconds — callers that hit a freshly-restarted Syracuse see timeouts until the pool fills. **Always set min ≥ 1** in production.
-
-Restart the pool after changing activity codes / user ACL — cached sessions keep the old context otherwise.
-
-### Authentication
-
-SOAP services accept two auth modes:
-
-| Mode | Setup | Use |
-|------|-------|-----|
-| **Basic auth** | HTTP `Authorization: Basic <base64(user:pass)>` — the user must have ACL on the published service in `GESAWE` | Internal integrations, trusted networks |
-| **WS-Security UsernameToken** | SOAP header `<wsse:Security>` with UsernameToken — same user lookup | When Basic is blocked by the web layer |
-
-The `callContext.codeUser` field inside the SOAP body can override the auth user in some legacy configs — **disable this in production**, it's a well-known impersonation footgun. See `security-permissions.md`.
-
-### Best practices for classic SOAP
-
-- **Return a status code as the last parameter** — never crash on validation failures, let the caller handle them. Use a vocabulary: `OK`, `KO_<reason>`, `WARN_<detail>`.
-- **Validate each input explicitly** — services bypass the entry transaction's natural checks.
-- **Wrap any DB writes in the `If adxlog` transactional idiom** (`database.md`).
-- **Don't call `Infbox` / `Errbox`** in a service subprogram — the user doesn't see a screen, and some clients crash parsing an unexpected popup response.
-- **Log every invocation** to a dedicated integration table (see `debugging-traces.md`) — support tickets are unworkable otherwise.
-- **Don't change signatures in place.** Adding an in/out parameter renumbers ranks and breaks every deployed client. Publish a `_V2` service instead and deprecate the old one.
-- **Idempotency.** A partner retrying after a network blip shouldn't double-insert. Accept an external correlation key and check it before acting.
-
-### Debugging SOAP
-
-When a SOAP call fails, the error surfaces in layers:
-
-| Symptom | Likely cause | Where to look |
-|---------|--------------|---------------|
-| `Method not found` or empty WSDL | `GESAWE` record exists but not validated, or activity code inactive | Re-validate the publication; check activity code is on |
-| `No such pool: <ALIAS>` | Pool in `GESAPO` missing or wrong folder | Verify alias, restart the pool |
-| 401 / 403 | ACL denies the authenticated user | User's role → ACL on the service code |
-| Parameter deserialization error | Rank / type mismatch between `GESAWE` grid and `Subprog` signature | Compare column-by-column; re-generate WSDL |
-| Timeout, pool exhausted | All sessions busy, caller waits beyond timeout | Increase pool size, optimize the service |
-| Silent empty response | Subprog threw before writing out params | Add `ECRAN_TRACE` entries; X3 tracing ON |
-| WSDL namespace mismatch | Client pinned to an older WSDL with different namespace | Re-download the WSDL; regenerate client stubs |
-
-**Turn on X3 tracing** (Administration → Utilities → Verifications → X3 tracing) before reproducing — you see every supervisor call the service makes and where it returns.
-
-### Migrating SOAP → REST — when and how
-
-Don't migrate unless there's a reason. Keep SOAP for:
-
-- Services with **complex array parameters** — REST service classes flatten badly to JSON
-- **Long-deployed external clients** — you can't force them to rebuild
-- Services that are already **working, tested, audited**
-
-Migrate to REST for:
-
-- **New integrations** where the partner chooses — REST is simpler to adopt
-- Services that naturally CRUD a business object — the representation gives you the REST API for free
-- Services that need **streaming** or large payloads — REST with HTTP chunking beats SOAP
-- **Mobile or browser clients** — no SOAP tooling anymore
-
-Migration pattern: wrap the existing SOAP `Subprog` in a V12 class, expose the class as a REST service (see `web-services-rest.md`), and run both in parallel for a deprecation window. Clients migrate at their own pace.
-
-## SOAP server — gotchas
-
-- **SOAP parameter order** — ranks in `GESAWE` must match the `Subprog` signature exactly. A swap compiles fine but deserializes garbage.
-- **SOAP pool restart** — changing activity codes, user ACL, or the underlying subprogram requires a pool restart. Cached sessions keep stale context otherwise.
-- **WSDL caching on the client side** — clients that cache the WSDL at build time don't pick up your changes until rebuilt. Version the service (`_V2`) before changing signatures.
-- **`callContext.codeUser` impersonation** — legacy configs accept a user code in the body that overrides auth. Disable in production.
-- **SOAP and transactions** — a SOAP subprogram runs in its own session with no pre-existing transaction; don't assume `adxlog` semantics from a batch context.
-
-For client-side gotchas (XML escaping, SOAP fault vs HTTP 200, encoding) and the full client wrapper class pattern, see `web-services-soap-client.md`.
-
-See also: `web-services-soap-client.md` (calling external SOAP services), `web-services-integration.md` (overview, file exchange, TLS), `web-services-rest.md` (REST publishing and SOAP→REST migration target), `security-permissions.md` (ACL, credential storage), `debugging-traces.md` (integration logging), `version-caveats.md` (`HTTPPOST` / `AFNC.XML*` availability).
+## Sources
+- https://online-help.sagex3.com/erp/12/en-us/Content/V7DEV/api-guide_soap-web-services.html
+- https://lvexpertisex3.com/x3help/ENG/V7DEV/api-guide_soap-web-services.html
+- https://online-help.sagex3.com/erp/12/en-us/Content/V7DEV/administration-reference_soapClassicPool.html
+- https://online-help.sagex3.com/erp/12/en-us/Content/V7DEV/administration-reference_host.html
+- https://online-help.sagex3.com/erp/12/en-us/Content/FCT/GESASU.htm
+- https://online-help.sagex3.com/erp/12/en-us/Content/FCT/GESAWE.htm
+- https://online-help.sagex3.com/erp/12/en-us/Content/V7DEV/integration-guide_ws-overview.html
+- https://communityhub.sage.com/us/sage_x3/f/general-discussion/76797/multi-dimensional-parameters-in-subprogram-called-as-a-web-service (community)
+- https://rklesolutions.com/blog/5-days-sage-x3-web-services-v12-day-3 (community)

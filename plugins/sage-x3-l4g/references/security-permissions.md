@@ -1,227 +1,198 @@
 # Security and permissions
 
-How access control works in Sage X3 V12, what to check on a custom screen / class / service, and how to avoid the standard footguns. Covers user roles, function profiles (`GESAFP`), function authorisations (`GESAUT`), action authorisations (`GACTION`), folder-level filters, and credential storage.
+How access control works in Sage X3 V12 (Syracuse platform + X3 folder), how specific code checks rights with the
+documented context methods, and the coding rules that keep custom developments safe: secrets, injection, folder
+isolation, hardening. Read it before publishing a service, adding a custom function, or building SQL/JSON/XML from
+user input. Audit trails and GDPR are in `audit-compliance.md`.
 
-## The X3 access-control stack
+## Contents
+- [Two layers of access control](#two-layers-of-access-control)
+- [Syracuse: users, groups, roles, security profiles](#syracuse-users-groups-roles-security-profiles)
+- [X3 folder: users, function profiles, access codes](#x3-folder-users-function-profiles-access-codes)
+- [Checking rights in code](#checking-rights-in-code)
+- [Web-service authentication](#web-service-authentication)
+- [Secrets](#secrets)
+- [Injection](#injection)
+- [Hardening development and runtime](#hardening-development-and-runtime)
+- [Folder isolation](#folder-isolation)
+- [Gotchas](#gotchas)
+- [Sources](#sources)
 
-Before getting to L4G specifics, the model itself:
+## Two layers of access control
 
-```
-User  ──┐
-        ├──> Role(s)  ──┐
-        ├──> Folder      ├──> Function profile (GESAFP)  ──> Function (GESAFC) ──> ACL on screen / object / service
-        └──> Group(s)   ──┘                                                           ↑
-                                                                                       └── filtered by GACTION (action-level rights) and Roles (Syracuse)
-```
+| Layer | Managed in | Controls |
+|---|---|---|
+| Platform (Syracuse) | Administration pages: Users, Groups, Roles, Security profiles, Endpoints | Authentication, which endpoints (folders) a user reaches, which role he connects with, platform administration rights, license badges |
+| Folder (X3) | GESAUS (users), GESAFT (function profile codes), GESAFP (functional authorizations), GESACS (access codes) | Which functions, per company/site, with which rights and options; which records/fields an access code protects |
 
-Three layers gate everything:
+A request is allowed only if both layers agree: the user's group grants the endpoint, and the X3 user behind that
+endpoint holds the function in his function profile.
 
-1. **Authentication** — user identity (Syracuse session token, Basic auth, WS-Security).
-2. **Authorisation** — function profile assigned to the user controls which functions (screens, batches, reports, services) are reachable.
-3. **Action filter** — even inside an allowed function, the actions visible (`Save`, `Delete`, `Validate`) are filtered by `GACTION`.
+## Syracuse: users, groups, roles, security profiles
 
-REST endpoints inherit the same model — Syracuse maps a role to a set of functions and propagates ACL down to the published representation.
+- **User**: login, active flag, authentication policy (Standard = global setting, DB, LDAP, OAuth2, SAML2), and
+  per-endpoint X3 user code ("Endpoints login" grid; by default the X3 user code equals the login).
+- **Group**: a set of users; grants the list of **endpoints** and is associated with one **role**.
+- **Role**: what the user connects as; carries the license **badges** and one **security profile**.
+- **Security profile**: platform administration rights (CRUD + Execute per code such as `users`, `myProfile`,
+  `technicalSettings`, development) and a level 0-99 (0 most powerful). A role without security profile has no
+  restriction on administration — always assign one.
 
-## Function profiles (`GESAFP`)
+Sage's security guide: least privilege per role, never share accounts, grant `technicalSettings` to a single admin
+role, and give each user only the endpoints he needs.
 
-Assign each user / role a function profile. The profile lists allowed functions (`GESAFC`):
+## X3 folder: users, function profiles, access codes
 
-| Function code | Type | Example |
-|---------------|------|---------|
-| `GESBPC` | Screen | Customer entry |
-| `IMP_CUSTOMER` | Import template | Customer import |
-| `YWS_CHECK_STOCK` | Web service | Custom service |
-| `YIMP_HOOK` | Subprogram | Custom hook |
+- **GESAUS (Users)**: menu profile (navigation only, not rights), **function profile** (rights), access-code grid
+  (Inquiry / Modification / Execution per code, or "All access codes"), user parameters.
+- **GESAFT (User function profiles)**: the profile code; "All authorized functions" for administrator profiles only.
+- **GESAFP (Functional profile)**: function-by-function authorizations, optionally per site or site group, plus
+  options. For object functions the rights are creation / modification / deletion (GESAFC "access type object").
+- **GESAFC (Functions)**: a specific function must exist here (Y/Z code) to be granted in GESAFP. Each function can
+  carry up to 20 option letters; **lower-case letters are reserved for specific developments**, and at execution the
+  supervisor loads the authorized options in the global `GUSRAUZ(n)` (n = site breakdown index).
+- **GESACS (Access codes)**: codes up to 10 characters acting as locks on records, fields, reports or functions;
+  users get read / write / execute on each code in GESAUS.
+- The main administrator code comes from parameter `ADMUSR` (ADMIN by default); Sage recommends the restricted
+  `ADMCA` user for routine administration.
 
-Custom (`Y`/`Z`) functions must be declared in `GESAFC` — without an entry, no profile can grant access. **Always declare a custom function with the same prefix as its file.**
+## Checking rights in code
 
-## Function authorisations (`GESAUT`)
+V12 exposes the rights through the context (`this.ACTX` in class code). Every method takes the current instance
+as first argument; with `AFLGERR = [V]CST_ATRUE` the refusal is also written in the instance's error list,
+with `[V]CST_AFALSE` only `[V]CST_AERROR` is returned.
 
-The `GESAUT` table stores the cross-product user × function. For a given user/group, it shows what's authorized. Useful for audits — but day-to-day, edit `GESAFP` (the profile) and let it propagate.
-
-In L4G, check authorisation explicitly when needed:
+| Method | Arguments | Answers |
+|---|---|---|
+| `AGETAFCRIGHT` | `(this, FUNCTION, AFLGERR)` | Function allowed on at least one site/company |
+| `AGETAFCRIGHTFCY` / `AGETAFCRIGHTCPY` | `(this, FUNCTION, SITE or COMPANY, AFLGERR)` | Function allowed for that site / company |
+| `AGETAFCRIGHTC` / `R` / `U` / `D` / `N` | `(this, FUNCTION, SITE, AFLGERR)` | Object function: create / read / update / delete / change the enable flag |
+| `AGETACSRIGHTC` / `M` / `E` | `(this, ACCESS_CODE, AFLGERR)` | Access code: creation / modification / execution right |
 
 ```l4g
-Local Integer ALLOWED
-Call ATTRIB([V]GUSER, "YWS_CHECK_STOCK", ALLOWED) From GESAUT
-If !ALLOWED
-    Errbox mess(45, 100, 1)        # "Not authorised"
-    Return
-Endif
-```
-
-`ATTRIB` is the supervisor signature — verify presence on your patch level (`version-caveats.md`).
-
-## Action authorisations (`GACTION`)
-
-Even when a function is allowed, individual actions inside it are filtered. The standard pattern at the top of an action handler:
-
-```l4g
-##############################################################
-# $YACTION — custom action on the BPC entry
-##############################################################
-$YACTION
-Local Integer OK
-Call CTRACT("BPC", "YACTION", OK) From GACTION
-If !OK
-    Errbox mess(45, 100, 1)
-    Return
-Endif
-# … action body …
+# Fragment of a class script operation: refuse a closing if the user lacks the specific function YACCCLO
+$YCLOSE_ACCOUNT
+  [L]ASTATUS = fmet this.ACTX.AGETAFCRIGHT(this, "YACCCLO", [V]CST_ATRUE)
+  If [L]ASTATUS = [V]CST_AERROR
+    Return : # the error is already attached to this
+  Endif
+  # ... business logic, see v12-classes.md
 Return
 ```
 
-Register the action code (`YACTION`) in `GESACT` (Action codes) and grant it via the role's action profile. Without registration, `CTRACT` returns `0` (deny) for everyone.
+Sage's own sample on that page misspells the method (`AGETAFCRIFGRC`) and omits the site argument — follow the
+table. For Classic functions, the function launch itself is filtered by GESAFP; no other Classic check API is
+documented. Never re-implement rights by testing user codes in code.
 
-## ACL on a published service
+## Web-service authentication
 
-### Classic SOAP (`GESAWE`)
+- SOAP and REST calls authenticate a Syracuse user; that user's groups, role and X3 function profile apply as for a
+  person. Create dedicated technical users with only the needed functions; the Users page offers "Password never
+  expires" precisely for such flows. The SOAP `codeUser` field of the call context is deprecated and ignored.
+- Sage's security guide: prefer Sage ID, OAuth2, SAML2 or LDAPS; basic authentication is intended for demos.
+- Details per protocol: `web-services-soap.md`, `web-services-rest.md`; outgoing calls: `web-services-rest-client.md`.
 
-Every record in `GESAWE` has an **Access code** field. The user authenticated for the SOAP call must have that access code in their function profile, otherwise the call fails 403. Default: leave the field empty during development → **non-default before production**.
+## Secrets
 
-Don't reuse a generic access code across unrelated services — granularity matters. A `YWS_DEBUG` code accidentally bound to a sensitive service grants debug-tier users full access.
+- Never write passwords, API keys or tokens in scripts, in `Value` defaults, in URLs or in traces/log tables.
+- Outgoing REST services are declared in Syracuse (*Outgoing REST web services*: base URL, content type,
+  authentication None/Basic, CA certificates); code refers to the service **name** — `web-services-rest-client.md`.
+  Keep credentials there, managed by administrators, not in L4G.
+- Folder or user parameters (GESADP) are configuration, readable by anyone allowed on the setup functions and
+  copied with the folder: do not treat them as a vault. There is no documented "encrypted parameter" type, and no
+  `crypt$`/`decrypt$` function in the glossary.
+- Separate credentials per environment; never copy production secrets into a test folder.
 
-### REST representation (Syracuse)
+## Injection
 
-Each representation gets a function code. In Syracuse: **Administration → Roles**, link the role to the function with `Read`, `Update`, `Create`, `Delete` flags as appropriate.
-
-Service representations (non-CRUD) get a single execute permission — grant per role, never per user.
-
-## Credential storage — never hardcode
-
-API keys, passwords, OAuth client secrets, partner SOAP credentials must not appear in `.src` files. Options, ranked by preference:
-
-### 1. Generic parameters (`PARAMG`) — preferred for non-secret config
+**SQL.** Sage's guidance: `Execsql` and `Sql` take an evaluated string, so every piece of data used to build it
+must be escaped. First choice: use `Read`/`For`/`Update … Where` with variables (no SQL text built in your code).
+If raw SQL is unavoidable, whitelist identifiers and double single quotes in values:
 
 ```l4g
-Local Char URL(500)
-URL = func AFNC.PARAMG("YINT", "EXTAPI", "URL")
+##############################################################
+# YSQL_QUOTE - return a quoted SQL literal ('O''Neil')
+##############################################################
+Funprog YSQL_QUOTE(TXT)
+Value Char TXT()
+Local Char RES(255)
+Local Integer I
+  For I = 1 To len(TXT)
+    If mid$(TXT, I, 1) = "'"
+      RES += "''"
+    Else
+      RES += mid$(TXT, I, 1)
+    Endif
+  Next I
+End "'" + RES + "'"
 ```
 
-Defined in `GESADP` per folder, surface-level access controlled.
-
-### 2. Encrypted parameters
-
-For real secrets, use the parameter type "encrypted" (chapter parameter with `cypher = 1`) or store in a custom table with `crypt$()` / `decrypt$()` calls. Encryption key lives in folder-level config, not in code.
-
-### 3. External secret manager
-
-For multi-environment deploys, Syracuse can read environment variables passed at boot. Reference them via a single supervisor wrapper. Don't shell out to `env` from L4G — leaks via traces.
-
-### Anti-patterns to flag in review
-
-- A literal API key in a string assignment
-- A password as a default value of a `Subprog` parameter
-- Credentials passed via the URL query string (logged everywhere)
-- A "temporary" hardcoded token with a comment saying "TODO replace before deploy"
-
-## Login and session context
-
-Useful system variables for security-sensitive code:
-
-| Variable | Meaning |
-|----------|---------|
-| `[V]GUSER` | Current X3 user code |
-| `[V]GFOLDER` | Active folder |
-| `[V]GLANGUE` | Session language |
-| `[S]adxlog` | Set when inside a transaction (also relevant for atomicity, see `code-review-checklist.md`) |
-| `[V]GROLE` (V12) | Active Syracuse role |
-
-Always log `[V]GUSER` + `date$` + `time$` into integration log tables — non-negotiable for audits.
-
-## Restricted-access actions
-
-For high-risk operations (mass delete, financial close, custom batches), require a second factor: prompt for the user's password again, or require the user to belong to a specific group.
+**JSON.** Build values with `escjson` (escapes `"`, `\` and control characters U+0000-U+001F):
 
 ```l4g
-Local Char    PWD(20)
-Local Integer OK
-Inpbox PWD Mask 0001                    # password mask, hidden input
-Call CHECK_PWD([V]GUSER, PWD, OK) From AUTHUTI
-If !OK
-    Errbox "Wrong password."
-    Return
+Local Char YNAME(80), YJSON(250)
+YNAME = 'Dupont "Le Grand"'
+YJSON = '{"name":"' + escjson(YNAME) + '"}'
+```
+
+**XML.** Escape `&` first, then `<`, `>`, `"`, `'` — helper and SOAP envelopes in `web-services-soap-client.md`.
+
+**Inbound data.** Never `evalue` or `Execsql` text received from a partner; validate format and length before storing.
+
+## Hardening development and runtime
+
+From Sage's security best practices:
+- Development is for dedicated environments: disable the development privilege in every role's security profile in
+  production and remove function **ADOTRT** (the script editor, community-reported) from X3 function profiles.
+- Configure the runtime **sandbox**: it restricts `System` commands and the file locations the engine can touch.
+- `nodelocal.js`: `adminUserRestrict = true` (ADMIN code only for the admin login) and a restrictive
+  `upload.allowedTypes`.
+- Only HTTPS (443) is user-facing; the Node debug proxy (9514) is for development environments only; MongoDB,
+  Elasticsearch, AdxAdmin (localhost only) and the database are never exposed.
+- Audit options to switch on after go-live: parameter `TABTRA` (operation audit trail), activity code AUDIT with
+  table triggers (AUDITH/AUDITL), V12 audit collection on administrative data in MongoDB — `audit-compliance.md`.
+
+## Folder isolation
+
+- The current folder is `nomap` (or `GACTX.AFOLDER`); the user code is `GACTX.USER`. Classic code and workflow
+  formulas use `GUSER` (ADC_GESUSER.htm, GESAWA.htm); V7+ code uses `GACTX.USER`. Do not hard-code folder names
+  or compare them to decide behaviour: use a folder-level parameter instead.
+
+```l4g
+# YALLOWPURGE: specific integer parameter declared in GESADP at folder level, 1 = allowed
+Local Integer YALLOW
+YALLOW = fmet GACTX.APARAM.AGETVALNUM([V]CST_ALEVFOLD, "", "YALLOWPURGE")
+If YALLOW <> 1
+  End
 Endif
-# proceed with high-risk action
 ```
 
-`AUTHUTI.CHECK_PWD` exists on most patch levels — confirm before relying.
+- File paths: build them with `filpath` (current folder by default) — never absolute paths to another folder.
+- Which folders a user reaches is decided by Syracuse groups → endpoints, not by code.
 
-## Folder-level isolation
+## Gotchas
 
-When code reads or writes data across folders, enforce isolation:
+- The menu profile only shapes the menu ("it does in no case define the authorizations", GESAUS help): hiding a
+  function from a menu is not a security control. Rights live in GESAFP.
+- A custom function not declared in GESAFC cannot be granted — and every profile with "All authorized functions"
+  (GESAFT) reaches it anyway.
+- Access codes protect only what references them (record field, report, function); an empty code protects nothing.
+- `RES` in `YSQL_QUOTE` is limited to 255 characters (`Char` maximum): longer values need a `Clbfile`.
+- Error messages returned to web-service callers should not reveal table names or SQL; log details server-side.
 
-```l4g
-If [V]GFOLDER <> "PROD"
-    Errbox "Cette opération n'est autorisée qu'en PROD."
-    Return
-Endif
-```
+See also: `audit-compliance.md`, `web-services-soap.md`, `web-services-rest.md`, `web-services-rest-client.md`,
+`web-services-soap-client.md`, `v12-classes.md`, `function-codes.md`, `code-review-checklist.md`.
 
-The folder is set at session start and immutable for the session — safe to gate on.
-
-**Common bug:** custom scripts assuming the standard "SEED" / "X3" folder name. Always read `[V]GFOLDER` at runtime, never hardcode.
-
-## SQL injection — prevent at the boundary
-
-`Exec Sql` with concatenated user input is the standard L4G injection vector:
-
-```l4g
-# vulnerable
-QRY = "SELECT * FROM ITMMASTER WHERE ITMREF = '" - [L]USER_IN - "'"
-Exec Sql QRY On 0 Into …
-
-# safer — escape single quotes
-[L]USER_IN = replace$([L]USER_IN, "'", "''")
-QRY = "SELECT * FROM ITMMASTER WHERE ITMREF = '" - [L]USER_IN - "'"
-```
-
-Better still: use the L4G primitive form (`Read [ITM]ITMREF0 = [L]USER_IN`) — the engine binds the parameter, no string concat.
-
-Reserve `Exec Sql` for queries that genuinely need it (cross-table aggregates, advanced predicates) and apply the escape guard explicitly.
-
-## XML / JSON injection in services
-
-Outbound payloads built by string concatenation break with `&`, `<`, `"`. See `web-services-soap.md` for `YXML_ESC` and `web-services-rest.md` for the JSON build pattern.
-
-Inbound: never `Exec` or `eval` content from a partner. Treat every external input as untrusted — validate format before storing.
-
-## Audit trail — what to log
-
-Every security-relevant operation logs:
-
-| Field | Source |
-|-------|--------|
-| User | `[V]GUSER` |
-| Date | `date$` |
-| Time | `time$` |
-| Folder | `[V]GFOLDER` |
-| Action code | `"YDELETE"`, `"YEXPORT"`, `"YIMPORT"`… |
-| Target ID | `[L]CODE`, `[F:SOH]SOHNUM`… |
-| Result | `"OK"`, `"DENIED"`, `"ERROR"` |
-| Context | source IP if a service, batch id if a batch |
-
-Write to a dedicated `YAUDITLOG` (or `YINTEGRATIONLOG`) table — never `adxlog.log` only, that file rolls.
-
-## Standard pitfalls (production-tested)
-
-- **Service deployed without ACL** — anyone authenticated calls it. Set the access code in `GESAWE` before opening the firewall.
-- **`callContext.codeUser` impersonation** — legacy SOAP option that overrides auth from the body. Disable.
-- **"Test" user with admin rights left in production** — quarterly audit `GESAFP` for orphan profiles.
-- **Custom action without `CTRACT`** — bypasses `GACTION`. Every custom action handler starts with the `CTRACT` check.
-- **Error messages leaking schema** — `Errbox "ERROR: SELECT failed on YTABLE"` exposes table names. Use `mess()` codes in production.
-- **Hardcoded encryption keys** — same key in dev / preprod / prod, committed in a `.src` file. Move to folder parameter.
-- **Trace files in a public path** — `Openo "/var/www/html/trace.log"`. Always write to `TMP/` or a folder-private path.
-
-## Review checklist for security-sensitive changes
-
-1. ACL set on every new screen / function / service?
-2. Custom action code registered in `GESACT` and added to a profile?
-3. `CTRACT` check at the top of every custom action handler?
-4. Credentials read from `PARAMG` / encrypted store, never literals?
-5. SQL queries use parameter binding or escape user input?
-6. XML/JSON outbound payloads run through escape helpers?
-7. User + date + folder + result logged to an audit table?
-8. Error messages use `mess()` codes (no schema leakage)?
-
-See also: `code-review-checklist.md` (overall review pass), `web-services-soap.md` (SOAP auth), `web-services-rest.md` (REST auth and OAuth), `conventions-and-naming.md` (message chapters and Y/Z rule), `version-caveats.md` (which `ATTRIB` / `CTRACT` / `CHECK_PWD` signatures are stable).
+## Sources
+- https://online-help.sagex3.com/erp/12/en-us/Content/V7DEV/developer-guide_access-rights.html
+- https://online-help.sagex3.com/erp/12/en-us/Content/V7DEV/getting-started_security-best-practices.html
+- https://online-help.sagex3.com/erp/12/en-us/Content/V7DEV/administration-reference_users.html
+- https://online-help.sagex3.com/erp/12/en-us/Content/V7DEV/administration-reference_groups.html
+- https://online-help.sagex3.com/erp/12/en-us/Content/V7DEV/administration-reference_roles.html
+- https://online-help.sagex3.com/erp/12/en-us/Content/V7DEV/administration-reference_security-profiles.html
+- https://online-help.sagex3.com/erp/12/en-us/Content/FCT/GESAUS.htm , …/GESAFT.htm , …/GESAFP.htm , …/GESAFC.htm , …/GESACS.htm
+- https://online-help.sagex3.com/erp/12/en-us/Content/V7DEV/developer-guide_context-parameters.html
+- https://online-help.sagex3.com/erp/12/en-us/Content/V7DEV/how-to_how-to-get-information-relating-to-the-current-context.html
+- https://online-help.sagex3.com/erp/12/en-us/Content/V7DEV/4gl_escjson.html , …/4gl_execsql.html , …/4gl_nomap.html , …/4gl_filpath.html
+- https://online-help.sagex3.com/erp/12/en-us/Content/V7DEV/administration-reference_outgoing-rest-web-services.html
+- https://online-help.sagex3.com/erp/12/en-us/Content/OBJ/ADC_GESUSER.htm , https://online-help.sagex3.com/erp/12/en-us/Content/FCT/GESAWA.htm (GUSER)

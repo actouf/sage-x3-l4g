@@ -1,309 +1,223 @@
 # Batch processing and scheduling
 
-How to write batches that run at scale, and how to schedule them through the X3 batch infrastructure (`GESABA`, `GESAPL`). Covers the per-row transaction discipline, recurrent vs one-shot scheduling, dependencies, and post-mortem traces.
+How Sage X3 V12 runs background work: batch tasks (GESABT), recurring tasks (GESABA), the batch
+calendar (GESABC), request submission and monitoring (EXERQT, ASYRREQMAN), the Syracuse batch
+controller, and how to write a batch process that receives parameters, logs, survives restarts and
+commits row by row. Read this before scheduling anything or writing a long-running process.
 
-For performance tuning of the batch body itself (indexes, transaction granularity, profiling), see `performance.md`. For email summaries / notifications at the end of a batch, see `workflow-email.md`.
+## Contents
+- [Architecture](#architecture)
+- [Functions](#functions)
+- [Defining a task (GESABT)](#defining-a-task-gesabt)
+- [Writing the batch process](#writing-the-batch-process)
+- [Scheduling (GESABA, GESABC)](#scheduling-gesaba-gesabc)
+- [Batch controller (Syracuse)](#batch-controller-syracuse)
+- [Monitoring and logs](#monitoring-and-logs)
+- [Restart safety and pacing](#restart-safety-and-pacing)
+- [Gotchas](#gotchas)
+- [Sources](#sources)
 
-## The batch lifecycle in X3
+## Architecture
 
 ```mermaid
 flowchart LR
-    src["Source<br/><code>.trt</code>"] --> dec["Declared<br/>in <code>GESABA</code>"]
-    dec --> sch["Scheduled<br/>in <code>GESAPL</code>"]
-    sch --> run["Executed<br/>by <code>adxbatch</code>"]
-    run --> log["Traced in<br/><code>adxlog</code> + <code>YBATCHLOG</code>"]
-    run --> exq["Status in<br/><code>GESAEX</code>"]
+    sub["Request submission<br/>EXERQT"] --> q["Request queue<br/>ABATRQT"]
+    rec["Recurring tasks<br/>GESABA"] --> q
+    job[".job files<br/>ABATPAR directories"] --> q
+    q --> ctl["Batch controller<br/>Syracuse"]
+    ctl --> run["One X3 session<br/>per request"]
+    run --> st["Status in ASYRREQMAN"]
+    run --> log["RQT + request no. log<br/>+ F#.tra"]
 ```
 
-Three objects to wire:
+Each request runs in its own classic X3 session (Sage support blog) under the folder and user it was
+submitted with, and waits in ABATRQT until the controller has a free slot (Maximum active queries).
 
-| Object | Form | Role |
-|--------|------|------|
-| Batch task | `GESABA` | Declares the script + parameters + activity code |
-| Schedule | `GESAPL` | Defines when (one-shot, recurrent, calendar-driven) |
-| Server | `GESBSV` | The OS process running the queue (one or several) |
+## Functions
 
-Each batch runs as a fresh X3 session bound to a folder, a user (the "batch user"), and an activity code. The session has no UI — `Infbox` / `Errbox` will hang or surface to log.
+| Code | Function | Use |
+|---|---|---|
+| GESABT | Task management | Declare a task (process, report or OS script) |
+| GESABA | Recurring task management | Run a task or group on a schedule |
+| GESABC | Batch server calendar | Non-working periods excluded from schedules (supervisor folder, common to all folders) |
+| EXERQT | Request submission | Submit a task/group for a date and time, enter its parameters |
+| ASYRREQMAN | Query management | List, interrupt, relaunch, purge requests; open logs |
+| ABATPAR | Batch server parameters | Directories for request files (`.job`, `.mod`, `.sta`, `.run`, `.req`, `.kil`, `.old`) |
+| GESACT / GESAFC | Actions / Functions | The action (template Standard process, **Batch** box) and function a task points to |
+| LECTRACE | Log reading | Read `F#.tra` logs |
 
-## Writing a batch script — house style
+`GESAPL`, `GESBSV`, `GESALI`, `GESAEX` do not exist; there is no `CRBATCH From GESBAT` API.
 
-Batches live in `<folder>/TRT/Y<NAME>.trt`. Conventional structure:
+## Defining a task (GESABT)
+
+| Field | Meaning |
+|---|---|
+| Task type (TYPTAC) | X3 process or OS script (shell / command file) |
+| Function (FONCTION) / Script (TRAIT) | Function to run (context and access rights) or, without function, a process/script name; PARAM = the function's `#` parameter |
+| Time-out (TIMOUT) | Minutes before the server kills the task (0 = none; checked only at the server's interval) |
+| Allowable delay (RETARD) | Minutes after the planned start beyond which the request is "out of time" |
+| Authorization level (NIVEAU), Hourly constraints (HOR) | Who may launch it; when direct submissions may run |
+| Multi-folder (MULTIDOS), Single-user (MONO) | Launch in another folder; require exclusive use of the folder |
+| Message - user (MESSAGE) | Warn the submitter at the end; required for End of task workflow rules |
+
+Sage's technical appendix: a task should be defined **by a function** whose action uses the
+**Standard process** template (GTRAITE) without a main window, optionally with a dialogue box; the
+action's `OUVRE_BATCH` label must open the tables needed by the dialogue controls. The older posting
+method is "strongly advised" against. In GESACT the action needs the **Batch** box (ABTFLG); a
+deactivated task stops its recurring tasks at their next iteration.
+
+## Writing the batch process
+
+The Standard process template calls your script's `$ACTION` with these events:
+
+| Phase | Actions (in order) |
+|---|---|
+| Submission (interactive) | `OUVRE_BATCH`, `INIT_DIA`, criteria entry, `CONT_BATCH`, parameters saved |
+| Run (interactive, or batch execution) | `INIT`, `AVANT_PAR`, `INIT_DIA`, `CONTROLE`, **`EXEC`**, `TERMINE`, log display, `SORTIE` |
+
+- `GBATCH` = 1 while parameters are entered for a batch submission; `GSERVEUR` = 1 while the process
+  runs on the batch server (0 = interactive).
+- The criteria-window fields are stored in ABATRQT at submission and re-read in the batch phase
+  (max 500 fields; a field name must not appear on two screens of the window).
+- The template opens **no transaction**: commit per row yourself.
+- A specific action runs before the standard one; `GPE = 1` skips the standard one.
+- Status: ASYRREQMAN describes **Warning** as "finished on a non-blocking error code (GERRBATCH
+  < 100)"; GESABA lists `GOK` <> 1, `GERRBATCH` < 100 and `GERREUR` <> 0 as errors that stop a
+  recurring task unless **Proceed if error** is set. The full `GERRBATCH` scale is not documented.
 
 ```l4g
-##############################################################
-# YBATCH_CLOSEORDERS — close orders older than 180 days
-# Parameters (passed in via GESABA):
-#   [V]GPARAM1 = max age in days (default 180)
-##############################################################
-$MAIN
-Local Integer N, AGE
-Local File SORDER [SOH]
-
-# 1. Read parameters with defaults
-AGE = val([V]GPARAM1)
-If AGE = 0 : AGE = 180 : Endif
-
-# 2. Log start
-Call YLOG_BATCH("YBATCH_CLOSEORDERS", "START", "age=" + num$(AGE)) From YBATCHLOG
-
-# 3. Body — per-row transaction (see performance.md for the rationale)
-N = 0
-For [SOH] Where SOHSTA = 1 And ORDDAT < date$ - AGE Order By Key SOHNUM0
-    Trbegin [SOH]
-    Readlock [SOH]SOHNUM0 = [F:SOH]SOHNUM
-    If fstat : Rollback : Continue : Endif
-    [F:SOH]SOHSTA = 9
-    Rewrite [SOH]
-    If fstat : Rollback : Continue : Endif
-    Commit
-    Incr N
-Next
-
-# 4. Log end with metrics
-Call YLOG_BATCH("YBATCH_CLOSEORDERS", "END", "closed=" + num$(N)) From YBATCHLOG
+# YCLOSEOLD - specific script of action YCLOSEOLD (Standard process, Batch checked)
+# Criteria screen YCL0 carries NBDAYS. Table YORDHEAD [YOH], index YOH0 = NUM.
+$ACTION
+  Case ACTION
+    When "EXEC" : Call YCLOSE_EXEC([M:YCL0]NBDAYS)
+  Endcase
 Return
-```
 
-Discipline:
-
-- **`$MAIN` entry point** — `GESABA` calls the label `$MAIN` by default. Keep one per file.
-- **Read parameters at the top** — `[V]GPARAM1` / `[V]GPARAM2` … are populated by the engine from the `GESABA` parameter grid.
-- **Log start and end** to a custom `YBATCHLOG` table — `adxlog.log` rotates and is unsearchable.
-- **Per-row or bounded-batch transactions** — never hold a `Trbegin` across the entire iteration (deadlock risk; see `performance.md`).
-- **No `Infbox` / `Errbox`** — there's no user; replace with traces and a final email summary.
-
-## Declaring the batch in `GESABA`
-
-Path: **Administration → Settings → Batch server → Batch tasks**.
-
-| Field | Value |
-|-------|-------|
-| Code | `YBATCHCLOSE` (the task code, used by the schedule) |
-| Description | Human-readable, appears in monitoring views |
-| Module | Activity code (e.g. `YOPS`) |
-| Type | `Treatment` for a `.trt`, `Subprogram` for a callable `Subprog` |
-| Script | `YBATCH_CLOSEORDERS.trt` (without extension on some patches) |
-| User | The X3 user the batch runs as (sets ACL scope) |
-| Folder | Bind to one folder, or leave blank for the active one |
-
-Then the parameter grid:
-
-| Rank | Code | Type | Default | Description |
-|------|------|------|---------|-------------|
-| 1 | `AGE` | Integer | `180` | Max age in days |
-| 2 | `DRY` | Char(1) | `N` | `Y` = report only, no write |
-
-Parameters surface in L4G as `[V]GPARAM1`, `[V]GPARAM2`. The engine doesn't enforce types — your script reads them as strings and converts.
-
-## Scheduling in `GESAPL`
-
-Path: **Administration → Settings → Batch server → Recurring tasks** (or "Pending tasks" for one-shots).
-
-| Field | Value |
-|-------|-------|
-| Code | `YPLNCLOSE` (schedule code) |
-| Task | The `GESABA` code (`YBATCHCLOSE`) |
-| Recurrent | `Yes` for repeating jobs |
-| Calendar | Standard calendar from `GESACR`, defines run days |
-| Start time | First fire (for recurrent: the first occurrence) |
-| Interval | E.g. `1 day`, `1 hour`, `15 minutes` |
-| End date | Optional cap |
-| Server | Which `GESBSV` server picks it up |
-
-### Recurrent vs polling — pick the schedule, not the loop
-
-```l4g
-# Anti-pattern: polling loop in a batch body
-While 1
-    For [YINBOX] Where ...
-        # process new rows
-    Next
-    Sleep 30
-Wend
-```
-
-This holds a session open forever, leaks resources on crash, and survives nothing. Instead, write the body to do **one pass** and schedule it recurrent every 30 seconds — the engine handles restart, monitoring, and crash recovery.
-
-### Calendar-driven schedules
-
-For business-hour-only or end-of-month jobs, define a calendar in `GESACR` with the relevant working days, and reference it. The engine picks the next valid slot.
-
-### One-shot jobs
-
-For ad-hoc runs (data migration, one-time fix), use **Pending tasks** instead of recurrent. Set the task and time, the engine deletes the schedule after a successful run.
-
-## Running multiple servers (`GESBSV`)
-
-For load distribution, declare more than one batch server. Each server runs as an OS process, picks tasks from the queue, and reports back. Tasks are not pinned to a server unless the schedule names one — the queue distributes.
-
-| Setting | Effect |
-|---------|--------|
-| Server name | OS host or virtual queue name |
-| Max concurrent | Number of tasks the server runs in parallel |
-| Folder | Restrict to a folder, or leave open |
-
-Sizing rule: max concurrent × heavy-task RAM ≤ server RAM, with a margin. Heavy batches (mass updates, MRP runs) on their own server keeps OLTP responsive.
-
-## Job dependencies — chain batches
-
-X3's native scheduler does not support DAG dependencies directly (no "run B after A succeeds"). Two patterns:
-
-### Option 1 — chain in script
-
-```l4g
-$MAIN
-# Run task A
-Call MAIN_A() From YBATCH_A
-If [S]stat1
-    # A failed — log and stop, do not run B
-    Call ECRAN_TRACE("A failed, skipping B", 2) From GESECRAN
-    End 1
-Endif
-# Run task B
-Call MAIN_B() From YBATCH_B
-End 0
-```
-
-Cohesive, atomic — but the parent runs as one batch. If B is heavy, schedule it independently.
-
-### Option 2 — A enqueues B
-
-```l4g
-$MAIN
-# A's body
-…
-# Enqueue B at the end
-Call CRBATCH("YBATCHB", date$, time$ + 60, "") From GESBAT
-Return
-```
-
-`CRBATCH` (or your folder's signature for "create pending batch") enqueues the dependent task. Decoupled, but error path — if A succeeded but B fails to enqueue — needs explicit handling.
-
-## Monitoring — the `GESALI` and `GESAEX` queues
-
-| Form | What it shows |
-|------|---------------|
-| `GESALI` | Pending / queued tasks (not yet started) |
-| `GESAEX` | Currently running and completed tasks with status |
-| `GESACR` | Calendars |
-
-Status codes (in `GESAEX`):
-
-| Code | Meaning |
-|------|---------|
-| `0` | Pending |
-| `1` | Running |
-| `2` | Completed OK |
-| `3` | Aborted |
-| `4` | Error |
-
-A batch that ends with non-zero `[S]stat1` records as `4` (error) and stops the recurrent schedule until acknowledged in some configurations. Check the monitoring queue daily, or scrape `GESAEX` from a custom dashboard.
-
-## Custom batch log table — pattern
-
-Per-batch tracing is essential because `adxlog.log` rotates and is hard to search. Pattern:
-
-```l4g
-##############################################################
-# YBATCHLOG — central batch log
-##############################################################
-Subprog YLOG_BATCH(JOB, EVENT, DETAIL)
-Value Char JOB(), EVENT(), DETAIL()
-
-Local File YBATCHLOG [YBL]
-Raz [F:YBL]
-[F:YBL]JOB    = JOB
-[F:YBL]LOGDAT = date$
-[F:YBL]LOGTIM = time$
-[F:YBL]EVENT  = EVENT          # "START", "END", "ERROR", "STEP"
-[F:YBL]DETAIL = left$(DETAIL, 500)
-[F:YBL]LOGUSER = [V]GUSER
-Write [YBL]
+# A Subprog has its own locals; a Gosub label shares the template's (see entry-points.md)
+Subprog YCLOSE_EXEC(NBDAYS)
+Value Integer NBDAYS
+  Local File YORDHEAD [YOH]
+  Local File YORDHEAD [YOU]                       : # second cursor for updates
+  Local Date     LIMDAT
+  Local Integer  NBOK, NBKO
+  Local Shortint TRANS_OPEN
+  [L]LIMDAT = date$ - [L]NBDAYS
+  # Interactive run: open a trace. In batch (GSERVEUR = 1) Sage's GES_AOE1 sample opens none and
+  # writes to the request's log.
+  If !GSERVEUR : Call OUVRE_TRACE("YCLOSEOLD") From LECFIC : Endif
+  For [YOH]YOH0 Where STA = 1 and ORDDAT < [L]LIMDAT
+    [L]TRANS_OPEN = adxlog
+    If [L]TRANS_OPEN = 0 : Trbegin [YOU] : Endif
+    Update [YOU] Where NUM = [F:YOH]NUM and STA = 1 With STA = 2, CLODAT = date$
+    If fstat or adxuprec <> 1
+      # Update fstat 1/3 already rolled back: Rollback without a transaction is error 48
+      If [L]TRANS_OPEN = 0 and adxlog = 1 : Rollback : Endif
+      [L]NBKO += 1
+      Call ECR_TRACE("Not closed: " + [F:YOH]NUM, 1) From GESECRAN
+    Else
+      If [L]TRANS_OPEN = 0 : Commit : Endif
+      [L]NBOK += 1
+    Endif
+  Next
+  Call ECR_TRACE(num$([L]NBOK) - "closed," - num$([L]NBKO) - "skipped", 0) From GESECRAN
+  If !GSERVEUR : Call FERME_TRACE From LECFIC : Endif
 End
 ```
 
-Schema for `YBATCHLOG` (declared in `GESATB`):
+The `STA = 1` test inside the `Update` makes a rerun harmless: rows already closed are not touched.
+Trace calls (`OUVRE_TRACE`, `ECR_TRACE`, `FERME_TRACE`) are partly community-reported — see
+`debugging-traces.md`. The `If !GSERVEUR` guard comes from Sage's silent-import sample (GES_AOE1), which
+closes the trace with `Call CLOSE_LOC From LECFIC` instead of `FERME_TRACE`. Never use
+`Errbox`/`Infbox`/`LEC_TRACE` in the EXEC of a batch run: there is no user.
 
-| Column | Type | Note |
-|--------|------|------|
-| JOB | Char(20) | Batch code from `GESABA` |
-| LOGDAT | Date | |
-| LOGTIM | Time | |
-| EVENT | Char(10) | `START`, `END`, `STEP`, `ERROR` |
-| DETAIL | Char(500) | Free text (metric, error message, parameters) |
-| LOGUSER | Char(10) | `[V]GUSER` |
+## Scheduling (GESABA, GESABC)
 
-Index on `(JOB, LOGDAT, LOGTIM)` — search "all runs of YBATCHCLOSE last week" must be cheap.
+| Field | Meaning |
+|---|---|
+| Folder, User code, Password | Identity the requests run under (password needed for another user/folder) |
+| Group (GRP) / Task code (TACHE) | What to launch; a group must not contain inactive tasks or subgroups |
+| Periodicity (PERIO), JOUR, QUANT, FDM | Daily/weekly days/monthly days and Month end |
+| Excluded days (CAL) | A GESABC calendar (up to 25 date intervals) |
+| Start/End time (HDEB/HFIN) + Frequency (FRQ) | Every N minutes within the time range |
+| One single query (ONE) | One request per day that sleeps FRQ minutes between runs — it occupies a slot all day |
+| Purge (EPUR) | With a frequency: keep only the running and previous request in history |
+| Proceed if error (CNTERR) | Keep relaunching after an error |
+| Time (HEURE) ×3 + Forced execution (FORCE) | Fixed hours; Forced creates requests even if the hour has passed |
+| Relative date grid | Initialise date fields of the parameter screen (base date ± N days/weeks/months, or a formula) |
+| **Parameters** button | Enter the task's criteria once for all runs |
 
-## Post-batch summaries — email and metrics
+At batch-server start (or after midnight) the day's recurring requests are created. With a
+frequency, only the next request exists: deleting or interrupting it stops the chain until the next
+day, and a frequency change applies from the next day (menu Options / Restart restarts it).
 
-Pattern for end-of-day batches:
+## Batch controller (Syracuse)
 
-```l4g
-$MAIN
-…body…
+In V12 the queue is driven by a **batch controller** in Syracuse (class `batchServers`; community
+path Administration > Administration > Endpoints > Batch server), one per X3 solution:
+Auto start; User and Role (mandatory); Time between two searches (30-60 s advised); Timeout search
+time; Maximum delay to launch a query; **Maximum active queries** (whole runtime pool); Tags to pick
+runtimes. Services: Start, Stop (waits for running requests), Stop all (aborts them), List of
+queries. Sage support (community hub) describes it as a background thread of the Syracuse node
+process that opens one classic session per request.
 
-# At the end:
-Local Char SUBJECT(100), BODY(8000)
-SUBJECT = "[X3] " + JOB - " — " + num$(N) + " rows processed"
-BODY = "Job: " - JOB + chr$(13) + chr$(10) +
-       "Started: " - num$([L]START_DAT, "J/M/A") - " " - num$([L]START_TIM, "H:M:S") + chr$(13) + chr$(10) +
-       "Duration: " - num$([L]ELAPSED) - " s" + chr$(13) + chr$(10) +
-       "Rows: " - num$(N) + chr$(13) + chr$(10) +
-       "Errors: " - num$(NERR)
+## Monitoring and logs
 
-Call ENVMAIL("ops@example.com", "", "", SUBJECT, BODY, "", "") From AMAIL
-```
+- ASYRREQMAN statuses (local menu 21): Standby, In progress, Finished, Held, Kill, Canceled, Error,
+  Overdue, Warning. Actions: Log, Interrupt, Relaunch query / group, Restart recur. task, Parameter
+  entry, Purge, Information (controller status); **Classic function** opens the old AREQUETE view.
+- Per-request log: `RQT` + request number, in the TRA directory of SERVX3; general server log in the
+  same directory (`server.tra`).
+- Function logs: `F#.tra` in the folder's TRA directory (`#` from counter `[C]NUMIMP`), read with
+  LECTRACE.
+- E-mail the log: an **End of task** workflow rule with **Linked trace file** (`workflow-email.md`).
+- Community-reported (2021 R3+): Administration > Usage > Logs > X3 session logs, type "Batch
+  query", traces a given task/request at engine level.
 
-See `workflow-email.md` for the full `ENVMAIL` signature and HTML body variant, and `common-patterns-v12.md` recipe 5 for a complete orphan-orders batch with email.
+## Restart safety and pacing
 
-## Sleep and pacing — be a good neighbor
+- Assume the request can be killed at any row (time-out, Interrupt, server stop): commit per row or
+  per small chunk (`database.md`); a single transaction over thousands of rows can hit error 43
+  ("too many locks").
+- Make every write conditional on the state it changes (`Where STA = 1`), or keep a checkpoint row in
+  a Y table updated in the same transaction as the work.
+- Prefer a recurring task with a frequency to an endless polling loop in one request; if you must
+  wait inside a run (rate-limited API), `Sleep N` pauses N seconds.
+- Log counters (read, done, skipped, failed) at the end. `GERRBATCH` is the documented hook to flag
+  a run that completed with rejects (Warning status) — check on your patch which value displays as
+  Warning before relying on it in monitoring.
 
-Long-running batches that touch hot tables should pace themselves:
+## Gotchas
+- Single-user (MONO) tasks are not executed if the folder cannot switch to single-user mode;
+  community-reported: they block other tasks while running.
+- Hourly constraints of the task do not apply to group or recurring launches (the group's or the
+  recurring task's own rules apply).
+- Time-out is a minimum: the kill happens at the controller's next timeout check.
+- A request planned beyond Allowable delay / Maximum delay is marked out of time and not run.
+- Customisations (entry points) used by the batch server's own processing must live in the X3
+  folder (community-reported).
+- Recurring tasks run under the identity of the user entered in GESABA, not of whoever created them.
+- Parameter values entered at submission are frozen in ABATRQT: relaunching a request reuses them.
 
-```l4g
-For [SOH] Where SOHSTA = 1 Order By Key SOHNUM0
-    Trbegin [SOH]
-    # … per-row work …
-    Commit
-    If mod(N, 100) = 0 : Sleep 1 : Endif      # 1-second pause every 100 rows
-Next
-```
+See also: `database.md`, `debugging-traces.md`, `workflow-email.md`, `imports-exports.md`,
+`performance.md`.
 
-`Sleep` accepts an integer in seconds. For sub-second pauses, use `Sleep$ "0.1"` if available on your patch level, otherwise wrap in `System "sleep 0.1"`.
-
-Pacing matters less for off-hours runs, more for batches scheduled during business hours.
-
-## Restart safety — assume crashes
-
-A batch can crash mid-iteration (server restart, network glitch, DB hiccup). Design for resumability:
-
-- **Mark progress on the row, not in a counter.** If the job advances `[F:SOH]SOHSTA = 9`, the next run skips already-processed rows naturally.
-- **Use idempotency keys** for cross-system effects (don't double-send an email or double-charge an account).
-- **Persist intermediate state** before risky steps. A batch that holds 10,000 rows in memory and crashes loses everything — chunk and commit.
-
-## Common batch anti-patterns
-
-| Anti-pattern | Fix |
-|--------------|-----|
-| Polling loop with `While 1 + Sleep` | Use a recurrent schedule |
-| Single big `Trbegin` around the whole `For` | Per-row or bounded-batch transactions (`performance.md`) |
-| Hardcoded folder name in the script | Use `[V]GFOLDER` |
-| `Infbox` / `Errbox` for status | Use traces + email summary |
-| Reading `[V]GPARAM1` without a default | Always: `If P1 = "" : P1 = "default" : Endif` |
-| Unbounded `For` over a growing table | Add `Where ROWLOG > [L]LAST_RUN` to limit scope |
-| No log on success | Log start AND end — without it you can't prove the batch ran |
-| Skipping error path | Every `If fstat` writes a trace and continues or stops deliberately |
-
-## Review checklist for batches
-
-1. `$MAIN` entry, parameters read with defaults at top?
-2. Body uses per-row or bounded-batch transactions (no `Trbegin` around the loop)?
-3. `YBATCHLOG` entry on START + END + each ERROR?
-4. No `Infbox` / `Errbox`?
-5. ACL scope respected — batch user has rights to all touched tables?
-6. Idempotent (re-running doesn't duplicate effects)?
-7. Schedule in `GESAPL` — recurrent or one-shot, calendar where needed?
-8. Email summary or status table at end?
-
-See also: `performance.md` (transaction granularity, indexes, profiling), `workflow-email.md` (`ENVMAIL`, HTML, attachments), `debugging-traces.md` (`adxlog`, supervisor tracing), `code-review-checklist.md` (overall review pass), `security-permissions.md` (batch user ACL).
+## Sources
+- https://online-help.sagex3.com/erp/12/en-us/Content/FCT/GESABT.htm
+- https://online-help.sagex3.com/erp/12/en-us/Content/FCT/GESABA.htm
+- https://online-help.sagex3.com/erp/12/en-us/Content/FCT/GESABC.htm
+- https://online-help.sagex3.com/erp/12/en-us/Content/FCT/ASYRREQMAN.htm
+- https://online-help.sagex3.com/erp/12/en-us/Content/FCT/EXERQT.htm
+- https://online-help.sagex3.com/erp/12/en-us/Content/FCT/ABATPAR.htm
+- https://online-help.sagex3.com/erp/12/en-us/Content/FCT/GESACT.htm
+- https://online-help.sagex3.com/erp/12/en-us/Content/FCT/LECTRACE.htm
+- https://online-help.sagex3.com/erp/12/en-us/Content/MODEL/fon_traitement.htm
+- https://online-help.sagex3.com/erp/12/en-us/Content/MODEL/act_traitement.htm
+- https://online-help.sagex3.com/erp/12/en-us/Content/V7DEV/administration-reference_batch-server.html
+- https://online-help.sagex3.com/erp/12/en-us/Content/V7DEV/4gl_sleep.html
+- https://online-help.sagex3.com/erp/12/en-us/Content/V7DEV/4gl_update.html
+- https://online-help.sagex3.com/erp/12/en-us/Content/V7DEV/4gl_rollback.html
+- https://online-help.sagex3.com/erp/12/en-us/Content/V7DEV/4gl_call.html
+- https://online-help.sagex3.com/erp/12/en-us/Content/FCT/GES_AOE1.htm (GSERVEUR guard, CLOSE_LOC)
+- https://communityhub.sage.com/sage-global-solutions/sage_x3/b/sage-x3-support-insights-ame/posts/understanding-and-troubleshooting-the-sage-x3-batch-server
+- https://www.greytrix.com/blogs/sagex3/2023/12/15/how-to-send-a-log-trace-file-via-email-using-the-standard-process/

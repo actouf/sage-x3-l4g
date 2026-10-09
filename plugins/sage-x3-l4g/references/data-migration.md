@@ -1,305 +1,250 @@
 # Data migration
 
-Bulk historical loads, schema migrations, dual-write during cutover, validation passes. The "going live" surfaces that day-to-day imports (`imports-exports.md`) don't cover. Companion to `imports-exports.md` (per-row IMP/EXP templates) and `personalisation-activity.md` (how the schema you're migrating *to* is delivered).
+A repeatable playbook for loading legacy data into Sage X3 V12: staging tables, validation with a
+status per row, an idempotent loader that commits row by row, reconciliation queries, and a cutover
+checklist. Read this before any initial load, mass correction or system switch. File formats and
+templates are in `imports-exports.md`; transaction rules in `database.md`; scheduling in
+`batch-scheduling.md`.
 
-For ongoing, recurring imports of business data (CSV from a partner, EDI feeds), use IMP/EXP templates. This file is for one-shot or short-window migrations: legacy ERP → X3, bulk consolidation, schema-changing patches.
+## Contents
+- [The five-phase playbook](#the-five-phase-playbook)
+- [Staging tables](#staging-tables)
+- [Phase 1 - extract and stage](#phase-1---extract-and-stage)
+- [Phase 2 - validate](#phase-2---validate)
+- [Phase 3 - load](#phase-3---load)
+- [Phase 4 - reconcile](#phase-4---reconcile)
+- [Phase 5 - cutover](#phase-5---cutover)
+- [Moving setup between folders](#moving-setup-between-folders)
+- [Gotchas](#gotchas)
+- [Sources](#sources)
 
-## Migration shapes
+## The five-phase playbook
 
-| Shape | Typical scenario |
-|-------|------------------|
-| **Big-bang load** | Replacing legacy ERP. One night downtime, all data moves. |
-| **Phased load** | Domain-by-domain (customers, then items, then orders). Multiple cutover windows. |
-| **Dual-write** | Both systems live, X3 catches up while legacy still writes. |
-| **Schema migration in place** | Custom field added to a standard table; backfill default values. |
-| **Folder consolidation** | Multiple folders merged into one. Same schema, different keys. |
+| Phase | Goal | X3 tools | Exit criterion |
+|---|---|---|---|
+| 1. Extract and stage | Source rows copied as-is into Y staging tables | Import template without object, or a parser | Staged count = source count |
+| 2. Validate | Every row marked valid or rejected with a reason | L4G over staging | No unexplained reject |
+| 3. Load | Valid rows written to X3, safely re-runnable | Object import templates, or per-row writes for Y tables | Every valid row loaded or flagged |
+| 4. Reconcile | Counts and amounts agree | `For` loops, `For (...) Sql` | Signed off by the business |
+| 5. Cutover | Switch with a frozen source and a known rollback | Checklist below | Go / no-go decision |
 
-Pick the shape before designing the script. Big-bang is simplest; dual-write is the most expensive and the only one that survives a 1000-user cutover.
+Run the whole chain on a copy of production at least twice; time it, because the timing decides the
+cutover window.
 
-## The five-phase migration playbook
+## Staging tables
 
-Every non-trivial migration goes through these phases. Skipping one bites in production.
+One custom table per target entity (Tables dictionary GESATB, Y code, protected by your activity
+code). Keep source values as text so nothing is lost before validation.
 
-### Phase 1 — extract
+| Column | Type | Purpose |
+|---|---|---|
+| BATCH_ID | Char(20) | One value per extract run, never reused |
+| LINENO | Integer | Line number in the source |
+| Source columns | Char | Raw values (`CODE`, `DES`, `AMOUNT`, `BPCNUM` in the examples) |
+| STAT | Shortint | 0 new, 1 valid, 2 loaded, 8 rejected, 9 load error (house convention) |
+| MSG | Char(250) | Last reason |
 
-Pull source data into a neutral format. Don't extract directly into X3 tables; stage first.
+Examples below use `YSTGREF [YSR]` (index `YSR0` = BATCH_ID + LINENO, unique) feeding the custom
+table `YREFDATA [YRD]` (index `YRD0` = CODE). Only STAT and MSG are ever updated in staging.
 
-```
-legacy DB ─► extract.csv ─► staging tables in X3 (Y* prefixed) ─► standard tables
-```
+## Phase 1 - extract and stage
 
-Staging tables (`YSTAGING_BPC`, `YSTAGING_ITM`) have the same shape as the target plus:
+- Flat files: an import template with an **empty Object** on the staging table runs only data-type
+  checks — ideal for raw staging. Put BATCH_ID and LINENO in the extract file. Run it with
+  `IMPORTSIL` or the IMPORT batch task (`imports-exports.md`).
+- Formats a template cannot describe: parse with the sequential-file API (`sequential-files.md`) and
+  `Write` into staging, one short transaction per row or per chunk.
+- Ask the source owner for control totals (row count, amount totals) with every extract.
 
-| Field | Use |
-|-------|-----|
-| `STAT` | `0` = pending, `1` = OK, `2` = warning, `3` = error |
-| `MSG` | Last validation / load message |
-| `LOAD_DAT` | When the row was extracted |
-| `BATCH_ID` | Migration run identifier (so you can re-run) |
-
-The staging buffer lets you validate, fix, and reload without re-extracting from the legacy system every time.
-
-### Phase 2 — validate
-
-Run validation passes against the staging table — never against production target. Validation rules:
+## Phase 2 - validate
 
 ```l4g
-##############################################################
-# YMIG_VALIDATE_BPC — validate staged customer rows
-##############################################################
-$MAIN
-Local File YSTAGING_BPC [YBP]
-Local Integer N_OK, N_KO
-
-For [YBP] Where STAT = 0
-    # Required fields
-    If [F:YBP]BPCNAM = ""
-        [F:YBP]STAT = 3
-        [F:YBP]MSG  = "Empty BPCNAM"
-        Rewrite [YBP]
-        Incr N_KO
-        Continue
+# Validate batch YBATCH: STAT 0 -> 1 (valid) or 8 (rejected, reason in MSG). Returns rejects.
+Funprog YMIG_VALIDATE(YBATCH)
+Value Char YBATCH()
+Local File YSTGREF [YSR]
+Local File YSTGREF [YSU]                      : # second cursor: never update through the loop's one
+Local File BPCUSTOMER [BPC]
+Local Shortint YSTA, TRANS_OPEN
+Local Char     YMSG(250)
+Local Integer  YREJ
+  For [YSR]YSR0 Where BATCH_ID = YBATCH and STAT = 0
+    YSTA = 1 : YMSG = ""
+    If [F:YSR]CODE = ""
+      YSTA = 8 : YMSG = "Code missing"             : # literal for brevity — use mess() in real code
+    Else
+      Read [BPC]BPC0 = [F:YSR]BPCNUM
+      If fstat
+        YSTA = 8 : YMSG = "Unknown customer " + [F:YSR]BPCNUM : # literal for brevity — use mess() in real code
+      Endif
     Endif
-
-    # Format checks
-    If [F:YBP]CRY = "FR" And [F:YBP]BPCCRN <> "" And not pat([F:YBP]BPCCRN, "#########")
-        [F:YBP]STAT = 3
-        [F:YBP]MSG  = "SIREN format invalid"
-        Rewrite [YBP]
-        Incr N_KO
-        Continue
+    If YSTA = 8 : YREJ += 1 : Endif
+    [L]TRANS_OPEN = adxlog
+    If [L]TRANS_OPEN = 0 : Trbegin [YSU] : Endif
+    Update [YSU] Where BATCH_ID = YBATCH and LINENO = [F:YSR]LINENO With STAT = YSTA, MSG = YMSG
+    If fstat or adxuprec <> 1
+      # Update fstat 1/3 already rolled back: Rollback without a transaction is error 48
+      If [L]TRANS_OPEN = 0 and adxlog = 1 : Rollback : Endif
+    Else
+      If [L]TRANS_OPEN = 0 : Commit : Endif
     Endif
+  Next
+End YREJ
+```
 
-    # Reference checks (currency, country, etc. exist in target)
-    Local File TABCUR [TCU]
-    Read [TCU]CUR0 = [F:YBP]CUR
+Typical checks: mandatory values, references that must exist in X3 (read them, as above), code
+lengths against the target dictionary, duplicates inside the batch, local menu values (the import
+template expects ranks or labels depending on its Local menu format).
+
+## Phase 3 - load
+
+| Target | Route |
+|---|---|
+| Standard object (customers, products, orders…) | Its import template: Sage supplies an editable standard template for each importable object in the reference folder. The import emulates entry, so the object's controls and side effects run. Generate the file from rows with STAT = 1, import, then mark rows loaded by reading the created records |
+| Custom Y table | Per-row `Write`, staging status updated in the **same** transaction (below) |
+
+Never write standard tables directly: you would bypass the object's controls and its related
+tables. For V12 classes, see `v12-classes.md`.
+
+```l4g
+# Load valid rows (STAT 1) of batch YBATCH into YREFDATA; call outside any transaction; re-runnable
+Funprog YMIG_LOAD(YBATCH)
+Value Char YBATCH()
+Local File YSTGREF [YSR]
+Local File YSTGREF [YSU]
+Local File YREFDATA [YRD]
+Local Shortint TRANS_OPEN, YERR
+Local Integer  YKO
+  For [YSR]YSR0 Where BATCH_ID = YBATCH and STAT = 1
+    YERR = 0
+    [L]TRANS_OPEN = adxlog
+    If [L]TRANS_OPEN = 0 : Trbegin [YRD], [YSU] : Endif
+    Read [YRD]YRD0 = [F:YSR]CODE
+    # Not there yet (a rerun finds it and skips the write)
     If fstat
-        [F:YBP]STAT = 3
-        [F:YBP]MSG  = "Unknown currency: " - [F:YBP]CUR
-        Rewrite [YBP]
-        Incr N_KO
-        Continue
+      Raz [F:YRD]
+      [F:YRD]CODE   = [F:YSR]CODE
+      [F:YRD]DES    = [F:YSR]DES
+      [F:YRD]AMOUNT = val([F:YSR]AMOUNT)
+      [F:YRD]BPCNUM = [F:YSR]BPCNUM
+      Write [YRD]
+      If fstat : YERR = 1 : Endif
     Endif
-
-    [F:YBP]STAT = 1
-    [F:YBP]MSG  = ""
-    Rewrite [YBP]
-    Incr N_OK
-Next
-
-Call YLOG_BATCH("YMIG_VALIDATE_BPC", "END",
-    "ok=" + num$(N_OK) + ",ko=" + num$(N_KO)) From YBATCHLOG
-Return
+    If YERR = 0
+      Update [YSU] Where BATCH_ID = YBATCH and LINENO = [F:YSR]LINENO With STAT = 2, MSG = ""
+      If fstat or adxuprec <> 1 : YERR = 1 : Endif
+    Endif
+    If YERR = 0
+      If [L]TRANS_OPEN = 0 : Commit : Endif
+    Else
+      YKO += 1
+      If [L]TRANS_OPEN = 0
+        If adxlog = 1 : Rollback : Endif      : # a failed Update may already have rolled back
+        Trbegin [YSU]                         : # record the failure in its own transaction
+        # "Load failed": literal for brevity — use mess() in real code
+        Update [YSU] Where BATCH_ID = YBATCH and LINENO = [F:YSR]LINENO
+        & With STAT = 9, MSG = "Load failed"
+        If fstat
+          If adxlog = 1 : Rollback : Endif
+        Else
+          Commit
+        Endif
+      Endif
+    Endif
+  Next
+End YKO
 ```
 
-Run validation, review the rejects (`STAT = 3`), fix in the source, re-extract, re-validate. Iterate until rejects are zero or acceptable.
+Why it is safe to rerun: loaded rows have STAT = 2 and are no longer selected; the target write and
+the STAT update share one transaction, so a crash leaves both or neither; a target row that already
+exists (created by hand, say) is marked loaded without being rewritten. Run large loads as a batch
+task (`batch-scheduling.md`) so they do not depend on a user session.
 
-### Phase 3 — load
+## Phase 4 - reconcile
 
-Move staged-and-valid rows into the target tables. Always per-row transactions (see `performance.md`).
+Three-way check: source control totals = staged rows = loaded + rejected + load errors; amounts
+likewise. A `For` loop is enough for staging:
 
 ```l4g
-##############################################################
-# YMIG_LOAD_BPC — load validated rows into BPCUSTOMER
-##############################################################
-$MAIN
-Local File YSTAGING_BPC [YBP], BPCUSTOMER [BPC]
-Local Integer N_OK, N_FAIL
-
-For [YBP] Where STAT = 1
-    Trbegin [BPC]
-
-    # Idempotency: skip if already loaded
-    Read [BPC]BPCNUM0 = [F:YBP]BPCNUM
-    If !fstat
-        Rollback
-        [F:YBP]STAT = 1                      # mark as already-loaded
-        [F:YBP]MSG  = "Already in target"
-        Rewrite [YBP]
-        Incr N_OK
-        Continue
-    Endif
-
-    # Build the target row
-    Raz [F:BPC]
-    [F:BPC]BPCNUM = [F:YBP]BPCNUM
-    [F:BPC]BPCNAM(0) = [F:YBP]BPCNAM
-    [F:BPC]CUR = [F:YBP]CUR
-    [F:BPC]CRY = [F:YBP]CRY
-    # … other columns …
-    [F:BPC]CREDAT = [F:YBP]ORIG_CREDAT      # preserve original creation date
-
-    Write [BPC]
-    If fstat
-        Rollback
-        [F:YBP]STAT = 3
-        [F:YBP]MSG  = "Write failed fstat=" + num$(fstat)
-        Rewrite [YBP]
-        Incr N_FAIL
-        Continue
-    Endif
-
-    Commit
-    [F:YBP]STAT = 1
-    Rewrite [YBP]
-    Incr N_OK
-Next
-
-Call YLOG_BATCH("YMIG_LOAD_BPC", "END",
-    "ok=" + num$(N_OK) + ",fail=" + num$(N_FAIL)) From YBATCHLOG
-Return
+Local File YSTGREF [YSR]
+Local Integer YNB
+Local Decimal YTOT
+  For [YSR]YSR0 Where BATCH_ID = YBATCH and STAT = 2
+    YNB += 1 : YTOT += val([F:YSR]AMOUNT)
+  Next
 ```
 
-Idempotency is critical — a load that crashes mid-way must be re-runnable without duplicating. The `Read` check at the top of each row, plus `STAT = 1` marking, makes it safe.
-
-### Phase 4 — reconcile
-
-After loading, prove the migration is complete and correct. Two reconciliation passes:
-
-#### Count reconciliation
+On large volumes let the database aggregate with the `Sql` form of `For` (columns carry the `_0`
+suffix in SQL; `Execsql` only runs DDL/DML and reports affected rows in `adxsqlrec`):
 
 ```l4g
-Local Decimal NB_LEGACY, NB_X3
-Local Char QRY(500)
-
-QRY = "SELECT COUNT(*) FROM YSTAGING_BPC WHERE STAT = 1"
-Exec Sql QRY On 0 Into NB_LEGACY
-
-QRY = "SELECT COUNT(*) FROM BPCUSTOMER WHERE BPCNUM LIKE '" - [V]LEGACY_PREFIX - "%'"
-Exec Sql QRY On 0 Into NB_X3
-
-If NB_LEGACY <> NB_X3
-    Call ECRAN_TRACE("MIGRATION DELTA: legacy=" + num$(NB_LEGACY) + ", x3=" + num$(NB_X3), 2) From GESECRAN
-Endif
+Local Integer YDBTYPE
+Local Char    YDB(1), YREQ(250)(1..3)
+  YDBTYPE = fmet GACTX.APARAM.AGETVALNUM([V]CST_ALEVFOLD, "", "TYPDBA")
+  YDB = string$(YDBTYPE = 1, "O") + string$(YDBTYPE = 2, "S")
+  YREQ(1) = "select count(*), coalesce(sum(R.AMOUNT_0), 0) from YREFDATA R"
+  YREQ(2) = " join YSTGREF S on S.CODE_0 = R.CODE_0"
+  YREQ(3) = " where S.BATCH_ID_0 = '" + YBATCH + "' and S.STAT_0 = 2"
+  # The caller has opened the trace (OUVRE_TRACE From LECFIC, see debugging-traces.md)
+  For (Integer NB, Decimal TOT) From YDB Sql YREQ(1..3) As [YRC]
+    Call ECR_TRACE("Loaded rows " + num$([F:YRC]NB) + ", total " + num$([F:YRC]TOT), 0) From GESECRAN
+  Next
 ```
 
-#### Sum reconciliation
+Never concatenate values coming from outside into SQL text; here YBATCH is generated internally.
+`ECR_TRACE` is community-reported (`debugging-traces.md`).
 
-For numeric columns (balance, credit limit, opening stock), sum should match end-to-end:
+## Phase 5 - cutover
 
-```l4g
-QRY = "SELECT SUM(CDTUNL) FROM YSTAGING_BPC WHERE STAT = 1"
-Exec Sql QRY On 0 Into TOTAL_LEGACY
+- [ ] Rehearsal timings known; window and go / no-go criteria agreed; rollback plan written.
+- [ ] Backup taken before the first load (and after sign-off).
+- [ ] Source frozen; final delta extracted with its control totals.
+- [ ] Recurring tasks that touch the migrated data deactivated (GESABA Active box) or the batch
+      controller stopped (Stop waits for running requests).
+- [ ] Workflow mails silenced: the template's Workflow box (ENAWRK) cleared, or rules deactivated.
+- [ ] Sequence number counters checked against migrated keys.
+- [ ] Load, reconcile, business sign-off recorded.
+- [ ] Tasks and rules reactivated, users reopened, staging purged after the retention period
+      (`audit-compliance.md`).
 
-QRY = "SELECT SUM(CDTUNL) FROM BPCUSTOMER WHERE BPCNUM IN (SELECT BPCNUM FROM YSTAGING_BPC WHERE STAT = 1)"
-Exec Sql QRY On 0 Into TOTAL_X3
+## Moving setup between folders
 
-If abs(TOTAL_LEGACY - TOTAL_X3) > 0.01
-    Errbox "Sum reconciliation failed"
-Endif
-```
+Several dictionary/setup functions have a **Copy** button that copies a record to another folder or
+to all folders: import/export templates (GESAOE), workflow rules (GESAWA — press Validation in the
+target folder), reports (GESARP), destinations (GESAIM). Development objects travel as patches
+(`personalisation-activity.md`). No supported folder merge/consolidation procedure is documented
+here.
 
-Discrepancies surface mismatched currency rates, rounding bugs, mid-flight writes from concurrent activity.
+## Gotchas
+- Imports fire workflow rules per record unless ENAWRK is cleared — mass mail on day one.
+- Fields that cannot be entered on the object's screens are not imported by a template.
+- Two-digit years pivot on the DCS parameter; decimal separator and date format are per template.
+- Dry run for free: import a file into the temporary storage space (GESAOW) only — format checks,
+  no real import; rejects of a real run land there too when AOWSTA is checked.
+- One transaction over a whole table can fail with error 43 (too many locks): commit per row/chunk.
+- Declare `Local File` once before the loop, never inside it.
+- Update the iterated table through a second abbreviation (`[YSU]` above).
+- A rerun must never duplicate: test the target key and the staging STAT before writing.
+- In batch there is no user: no `Errbox`/`Infbox`; write a log.
 
-### Phase 5 — cutover
+See also: `imports-exports.md`, `database.md`, `batch-scheduling.md`, `sequential-files.md`,
+`audit-compliance.md`, `performance.md`.
 
-The actual go-live. Checklist:
-
-1. Final extract from legacy (delta only — diff against last full extract).
-2. Apply the delta to staging.
-3. Load the delta.
-4. Run reconciliation against the legacy system at point-in-time.
-5. Switch users / integrations to X3.
-6. Lock the legacy DB (read-only for safety).
-7. Keep both systems available for 30+ days for emergency comparison.
-
-## Dual-write strategy
-
-For long cutovers (weeks, months), both systems must accept writes during the transition. Three options:
-
-### Option A — write to legacy, sync to X3
-
-Simplest. A daily delta-extract picks up changes from legacy and applies to X3.
-
-- Pro: low risk, legacy stays the source of truth.
-- Con: X3 is always behind by the delta cycle.
-
-### Option B — write to X3, sync to legacy
-
-X3 is the primary; legacy receives a feed for reporting / interim systems.
-
-- Pro: X3 is current.
-- Con: requires a working feed back to legacy.
-
-### Option C — write to both atomically
-
-Application code (or a middleware) writes to both at the same time. If either fails, both roll back.
-
-- Pro: both are always in sync.
-- Con: any outage in either system blocks all writes.
-
-Option A is by far the most common. Option B is for organisations that have already partially migrated. Option C is an anti-pattern outside very controlled cutover windows — distributed transactions across two stacks fail in subtle ways.
-
-## In-place schema migration
-
-When the migration is "add a column to a standard / custom table and backfill", the workflow is shorter:
-
-1. **Add the column** in `GESATB`. Set a default if appropriate.
-2. **Validate the dictionary** (`GESVAL`). Schema propagates.
-3. **Backfill** with a one-shot `$MAIN` script:
-
-   ```l4g
-   $MAIN
-   Local File BPCUSTOMER [BPC]
-   For [BPC] Where YPRIORITY = ""              # rows missing the new value
-       Trbegin [BPC]
-       Update BPCUSTOMER Where BPCNUM = [F:BPC]BPCNUM
-           With YPRIORITY = func YDEFAULT.PRIORITY([F:BPC]BPCCAT) Top 1
-       If fstat : Rollback : Continue : Endif
-       Commit
-   Next
-   Return
-   ```
-
-4. **Verify** with a count: `SELECT COUNT(*) FROM BPCUSTOMER WHERE YPRIORITY = ''` should be 0.
-5. **Make the column mandatory** in `GESATB` once backfill is complete.
-
-Doing it in this order means the application code can refer to the new column from day 1; old rows have a sane value before any reader needs it.
-
-## Folder consolidation
-
-Merging multiple folders into one (e.g. after an acquisition) raises specific issues:
-
-- **Key collisions** — `BP001` may exist in both folders with different meanings. Prefix one side, document the mapping.
-- **Different activity codes** — the merged folder must enable the union; any `#Active`-gated code must compile in the target.
-- **Different parameter values** (`GESADP`) — pick a canonical set; the migration script may need to remap referenced parameters.
-- **Different message chapters** — if both used `1000`, renumber one to `1100`.
-- **User / role merge** — out of L4G scope (Syracuse-side), but plan it.
-
-## Performance during migration
-
-Migrations write millions of rows. Apply `performance.md` guidance:
-
-- **Per-row transactions**, not one big `Trbegin`.
-- **Disable non-essential triggers** during load (re-enable after — and reconcile if any fired during the window).
-- **Drop / recreate non-critical indexes** if the load is large; rebuild after. Caveat: re-indexing a billion-row table takes hours.
-- **Batch the script** (`Sleep 1` every 100 rows on hot tables) to avoid starving online traffic if the migration runs during business hours.
-- **Run in a maintenance window** if possible — the simplest performance fix is "no concurrent users."
-
-## Common pitfalls
-
-- **Skipping the staging table** — direct DB-to-DB pumps mean you can't re-validate after fixing issues. Always stage.
-- **No idempotency** — the migration crashes at row 800,000 of 1,000,000; re-running creates duplicates of rows 1 to 800,000. Add the check.
-- **Reconciliation only by count** — same row count, different sums means a column was wrong. Always reconcile by count *and* by sum on key numeric columns.
-- **Migrating `CREDAT` as `date$`** — every customer "created today" instead of preserved historic dates. Map original-creation columns explicitly.
-- **No batch ID** — when the migration runs more than once and creates artefacts both times, you can't tell what to clean up.
-- **Cutover without a rollback plan** — if migration fails 2 hours into go-live, what's the path back? Document it before, not during.
-- **Migrating users / passwords** — usually impossible for security reasons. Plan for users to re-set their password on first login.
-- **Forgetting to re-enable mandatory column flag** after backfill — new rows skip validation if the column is still optional.
-- **Dual-write Option C with no idempotency keys** — partner system retry triples-writes one customer. Always pass a correlation key.
-- **Running the migration as the standard "ADMIN" user** — not auditable. Use a dedicated `YMIGUSER` that has migration-only permissions.
-
-## Migration checklist
-
-1. Source extract is reproducible (script + extract date stamped)?
-2. Staging table covers every target column + STAT/MSG/BATCH_ID?
-3. Validation rejects are zero or documented as accepted?
-4. Load is idempotent — re-running doesn't duplicate?
-5. Per-row transactions (not one giant `Trbegin`)?
-6. Reconciliation by count AND by key sums?
-7. Dependent reference data (currencies, countries, item categories) loaded first?
-8. CREDAT and other historical timestamps preserved?
-9. Audit trail — who ran it, when, with what BATCH_ID?
-10. Rollback plan documented for cutover?
-
-See also: `imports-exports.md` (recurring IMP/EXP templates for ongoing data flows), `batch-scheduling.md` (running migration scripts), `performance.md` (transaction granularity, indexes, profiling), `personalisation-activity.md` (deploying schema changes via patches), `diagnostics-postmortem.md` (when migration goes sideways), `security-permissions.md` (migration user ACL, audit logs).
+## Sources
+- https://online-help.sagex3.com/erp/12/en-us/Content/FCT/GESAOE.htm
+- https://online-help.sagex3.com/erp/12/en-us/Content/FCT/GESAOW.htm
+- https://online-help.sagex3.com/erp/12/en-us/Content/FCT/GES_AOE1.htm
+- https://online-help.sagex3.com/erp/12/en-us/Content/FCT/GESATB.htm
+- https://online-help.sagex3.com/erp/12/en-us/Content/FCT/GESABA.htm
+- https://online-help.sagex3.com/erp/12/en-us/Content/FCT/GESAWA.htm
+- https://online-help.sagex3.com/erp/12/en-us/Content/FCT/GESARP.htm
+- https://online-help.sagex3.com/erp/12/en-us/Content/FCT/GESAIM.htm
+- https://online-help.sagex3.com/erp/12/en-us/Content/V7DEV/4gl_sql.html
+- https://online-help.sagex3.com/erp/12/en-us/Content/V7DEV/4gl_execsql.html
+- https://online-help.sagex3.com/erp/12/en-us/Content/V7DEV/4gl_adxsqlrec.html
+- https://online-help.sagex3.com/erp/12/en-us/Content/V7DEV/4gl_update.html
+- https://online-help.sagex3.com/erp/12/en-us/Content/V7DEV/4gl_rollback.html
+- https://online-help.sagex3.com/erp/12/en-us/Content/V7DEV/4gl_write.html
+- https://online-help.sagex3.com/erp/12/en-us/Content/V7DEV/4gl_trbegin.html
+- https://online-help.sagex3.com/erp/12/en-us/Content/V7DEV/4gl_raz.html
+- https://online-help.sagex3.com/erp/12/en-us/Content/V7DEV/administration-reference_batch-server.html

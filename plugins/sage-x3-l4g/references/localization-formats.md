@@ -1,152 +1,212 @@
-# Localisation — currencies, addresses, RTL/CJK
+# Localisation: currencies, countries and character sets
 
-How to handle currency-aware amounts, country-specific address layouts, and right-to-left / double-byte languages in L4G. Companion to `localization.md` (which covers messages, language, dates, and numbers).
+Currency data (decimals, rounding, symbols, formats), exchange-rate rows, country rules (postal code and
+phone formats, ISO codes), address columns, and the character-set facts that matter when text crosses the
+database or a file. Read it before formatting an amount, converting between currencies, validating an
+address, or loading non-Latin text. Messages, languages, dates and numbers are in `localization.md`.
 
-## Currencies (`GESCUR` / `GESDEV`)
+## Contents
+- [Currencies (GESTCU, TABCUR)](#currencies-gestcu-tabcur)
+- [Rounding and formatting an amount](#rounding-and-formatting-an-amount)
+- [Exchange rates (TABCHANGE)](#exchange-rates-tabchange)
+- [Countries (GESTCY, TABCOUNTRY)](#countries-gestcy-tabcountry)
+- [Addresses](#addresses)
+- [Character sets and text length](#character-sets-and-text-length)
+- [Gotchas](#gotchas)
+- [Sources](#sources)
 
-Path: **Setup → Currencies → Currencies**.
+## Currencies (GESTCU, TABCUR)
 
-`GESCUR` declares currency codes (`EUR`, `USD`, `JPY`, etc.) with their attributes:
+Currencies are maintained in GESTCU (Common data > Common tables > Currencies) and stored in table TABCUR
+`[TCU]`, index `TCU0` = CUR. Column names come from the table dictionary; the GESTCU screen uses other
+field codes for some of them (FM1/FM2/FM3 on screen are CURFMT1/CURFMT2/CURFMT3 in the table).
 
-| Field | Use |
-|-------|-----|
-| `CUR` | 3-letter code |
-| `CURDES` | Description (per language) |
-| `CURSYM` | Symbol (`€`, `$`, `¥`) |
-| `CURDEC` | Number of decimals (`2` for EUR, `0` for JPY) |
-| `EUR` | Euro flag (legacy zone-EUR rules) |
+| Column | Meaning |
+|---|---|
+| CUR | Currency code (ISO 4217 code advised) |
+| INTDES, INTSHO | Description, short description (types AX3 / AX1: translated text in ATEXTRA) |
+| ISOCOD, ISONUMCOD | ISO 4217 alphabetic and numeric codes |
+| CURSYM | Monetary symbol |
+| DECNBR | Number of significant decimals of amounts in this currency |
+| CURRND | Rounding: all amounts in the currency are rounded to this precision |
+| CURFMT1, CURFMT2, CURFMT3 | Display formats for standard amounts, small amounts (unit prices) and totals |
+| EURFLG, EURRAT, EURDAT | Euro-zone flag (local menu 1), counter-value in euros, euro changeover date |
+| CURENDDAT | Date the currency leaves circulation (no exchange rates after it) |
 
-Read them via `func AFNC.PARAMG`:
+The effective number of decimals of **unit prices** is driven by the `GDECPRI` variable, not by DECNBR
+(GESTCU help).
 
-```l4g
-Local Char    SYM(5)
-Local Integer DEC
+## Rounding and formatting an amount
 
-SYM = func AFNC.PARAMG("CUR", "EUR", "SYM")     # "€"
-DEC = val(func AFNC.PARAMG("CUR", "EUR", "DEC"))  # 2
-
-Local Char AMT_STR(20)
-AMT_STR = format$("F" + num$(DEC), [F:SOH]AMT) - " " - SYM
-```
-
-### Multi-currency calculation
-
-Always store amounts with their currency code (`AMT` + `CUR` columns). When converting:
-
-```l4g
-Local Decimal RATE, AMT_EUR
-Call DEVISE([F:SOH]CUR, "EUR", [F:SOH]ORDDAT, RATE) From GDEV
-AMT_EUR = [F:SOH]AMT * RATE
-```
-
-`GDEV.DEVISE` looks up the rate from `GESCURRATE` for the given pair and date. Use the order date for historical rates, not `date$`.
-
-### Rounding and reporting
-
-Each currency has a rounding precision (`CURDEC` decimals). Apply consistently:
+`arr(VALUE, STEP)` rounds half away from zero to a step (`arr(x, 0.05)`); `arr(VALUE, 0)` returns the
+value unchanged. Use CURRND as the step, DECNBR for the number of decimals to display:
 
 ```l4g
-Local Decimal AMT_RND
-AMT_RND = round([L]AMT, val(func AFNC.PARAMG("CUR", [F:SOH]CUR, "DEC")))
+# Amount rounded to the currency precision and formatted with its symbol
+Funprog YFMT_AMOUNT(AMT, CUR)
+Value Decimal AMT
+Value Char    CUR()
+Local File TABCUR [TCU]
+Local Char FMT(20)
+  Read [TCU]TCU0 = [L]CUR
+  If fstat : End num$([L]AMT) : Endif
+  If [F:TCU]DECNBR > 0
+    [L]FMT = "N3:15." + num$([F:TCU]DECNBR) : # 15 integer digits, grouped by 3
+  Else
+    [L]FMT = "N3:15#"                       : # no decimals (JPY...)
+  Endif
+End format$([L]FMT, arr([L]AMT, [F:TCU]CURRND)) + " " + [F:TCU]CURSYM
 ```
 
-`round()` ties to even by default — for legal-accounting jurisdictions that require half-up, wrap with an explicit helper.
-
-For multi-currency reports, always store both the raw and the base-currency value to avoid rate drift between calculation and display:
+In V7+ class code, small tables such as currencies can be read through the context cache instead of a
+`Local File`. The developer guide's example declares a cache class `ACUR` (properties CUR, CURRND,
+EURFLG, EURDAT) and reads it through `this.ACTX.ACACHE`; check in GESACLA which cache class and
+properties exist in your folder before reusing the names:
 
 ```l4g
-[F:YREP]AMT_RAW = [L]AMT
-[F:YREP]CUR_RAW = [L]CUR
-[F:YREP]AMT_EUR = [L]AMT * [L]RATE
-[F:YREP]RATE_AT = [L]RATE
-[F:YREP]RATE_DAT = [L]ORDDAT
+Local Integer CURIDX
+  [L]CURIDX = fmet this.ACTX.ACACHE.ACUR.AGETINDEX(this.YCUR)
+  If [L]CURIDX <> [V]CST_ANOTDEFINED
+    this.YAMOUNT = arr(this.YAMOUNT, fmet this.ACTX.ACACHE.ACUR.AGETVALDEC(this.YCUR, "CURRND"))
+  Endif
 ```
 
-## Address formats — country-specific
+When the currency is unknown, raise an error on the property instead (ASETERROR, see `v12-classes.md`).
+Cached values stay as loaded until the session restarts.
 
-Customer addresses don't fit a single template:
+## Exchange rates (TABCHANGE)
 
-```
-US:                    UK:                    JP:
-Name                   Name                   〒postcode
-Street                 Street                 prefecture city
-City, State Zip        City                   street block-house
-                       Postcode               Name
-```
+Rates live in table TABCHANGE `[TCH]`:
 
-`GESACO` (countries) defines the address layout per country, including:
+| Column | Meaning |
+|---|---|
+| CHGTYP | Rate type (local menu 202; read labels with `mess(TYPE, 202, 1)`) |
+| CURDEN | Currency of the pair, titled "Destination currency" in the dictionary |
+| CUR | Other currency of the pair |
+| CHGSTRDAT | Rate date (start of validity) |
+| CHGRAT, CHGDIV, REVCOURS | Rate, divisor, reverse rate |
 
-- Field order (street → city → zip vs zip → city → street)
-- Postcode format / validation pattern
-- Mandatory fields per country
+Indexes: `TCH0` = CHGTYP+CURDEN+CUR+CHGSTRDAT, `TCH1` = CHGTYP+CURDEN+CHGSTRDAT+CUR.
 
-When displaying or printing an address, call the standard formatter:
+- Rates are typed in the **Currency rates** screen (Common data > Common tables > Currency rates,
+  community-reported; no function code could be verified) or loaded by FUNCURRAT from the Sage FX Rate
+  Service. FUNCURRAT needs a REST web service named CURRATAPI, only updates currencies that already have a
+  manually entered rate, and saves the rate on the day after the rate date.
+- The FUNCURRAT screen labels CURDEN "Source currency" while the table dictionary says "Destination
+  currency". Before writing a conversion formula, check the direction of CHGRAT / CHGDIV on a known pair in
+  your folder.
+- Euro-zone legacy currencies use EURFLG / EURRAT on the currency instead of the rate table.
+- No standard conversion subprogram is documented in the public help: do not guess a name. To read the
+  row in force at a date:
 
 ```l4g
-Local Char ADDR_FMT(500)
-Call FORMAT_ADDR([F:BPA]CRY, [F:BPA]ADDLIG(0), [F:BPA]CTY, [F:BPA]POSCOD, ADDR_FMT) From GESACO
-# ADDR_FMT contains a country-correctly-formatted multi-line address
+# Latest rate row of type RTYPE for (CURDEN, CUR) dated on or before RDATE
+Funprog YRATE_ROW(RTYPE, CURDEN, CUR, RDATE, RATE, DIVISOR)
+Value    Integer RTYPE
+Value    Char    CURDEN(), CUR()
+Value    Date    RDATE
+Variable Decimal RATE, DIVISOR
+Local File TABCHANGE [TCH]
+  [L]RATE = 0
+  [L]DIVISOR = 0
+  Read [TCH]TCH0 <= [L]RTYPE; [L]CURDEN; [L]CUR; [L]RDATE
+  If fstat <> 0 and fstat <> 2 : End [V]CST_AFALSE : Endif
+  # <= may stop on the previous pair or rate type: check the key segments
+  If [F:TCH]CHGTYP <> [L]RTYPE or [F:TCH]CURDEN <> [L]CURDEN or [F:TCH]CUR <> [L]CUR
+    End [V]CST_AFALSE
+  Endif
+  [L]RATE = [F:TCH]CHGRAT
+  [L]DIVISOR = [F:TCH]CHGDIV
+End [V]CST_ATRUE
 ```
 
-`FORMAT_ADDR` is one of several standard helpers — verify the exact signature on your patch level (`version-caveats.md`).
+Store the rate and the rate date next to every converted amount you persist: recomputing later with the
+current rate gives a different result.
 
-### Validating a postcode
+## Countries (GESTCY, TABCOUNTRY)
 
-Per-country postcode patterns live in `GESACO`. Check on data entry:
+Countries are maintained in GESTCY (Common data > Common tables > Countries) and stored in TABCOUNTRY
+`[TCY]`, index `TCY0` = CRY. GESACO is **not** the country function (it manages field headings).
 
-```l4g
-Local Char PATTERN(50)
-PATTERN = func AFNC.PARAMG("CRY", [M:BPA]CRY, "POSCODFMT")
-If PATTERN <> "" And not pat([M:BPA]POSCOD, PATTERN)
-    GOK = 0
-    Errbox mess(102, 1000, 1)             # "Postcode format invalide"
-Endif
-```
+| Column | Meaning |
+|---|---|
+| CRY, CRYDES | Country code, name (translatable) |
+| ISO, ISOA3, ISONUM | ISO 3166-1 alpha-2, alpha-3, numeric |
+| CUR, LAN | Default currency and language |
+| POSCODFMT | Postal code format applied at address entry (postal code: 10 characters maximum) |
+| MINZIP | Number of leading characters used by the postal code control (0 = whole code) |
+| POSCODCTL, POSOBL | Postal code control; postal code and city mandatory on addresses |
+| CTYCODFMT, CTYUPP | City format; force cities to upper case |
+| ADRCODFMT | Address entry format |
+| TELFMT, TELTCY, TELREG | Phone number format and the positions of country and region prefixes |
+| EECFLG, EECFMT | EU member; VAT number format |
+| CTLPRG | Control script holding the identifier checks (bank ID...) |
 
-Don't hardcode `pat([M:BPA]POSCOD, "#####")` — France is 5 digits, UK is alphanumeric variable length, US is 5 or 9 digits with optional dash, etc.
+- The formats are 4GL formatting strings: the help's US postal example is `5#[-]4#` (5 digits, a dash,
+  4 digits); with MINZIP = 5, the city is looked up on the first 5 characters when no city matches the
+  full code.
+- Standard address entry applies these controls. Read the country's format instead of hard-coding one
+  pattern per country in specific code, and remember that a direct `Write` into an address table bypasses
+  entry controls.
+- GESTCY documents the standard subprogram `DECOUPE(PAYS, TEL, INTER, REGION, NUTEL) From CONTNUM`, which
+  splits a formatted phone number using TELTCY / TELREG.
 
-## Right-to-left and double-byte languages
+## Addresses
 
-Arabic, Hebrew (RTL), and CJK languages bring extra concerns:
+Business-partner addresses are in BPADDRESS `[BPA]`, index `BPA0` = BPATYP+BPANUM+BPAADD, with
+`BPAADDLIG` (3 address lines), `POSCOD`, `CTY`, `SAT` (county / state), `CRY` and `CRYNAM`. The public help
+documents no address-formatting API: earlier versions of this skill cited `FORMAT_ADDR From GESACO`, which
+does not exist. Build a printed layout in your own `Y` function from these columns and the country record,
+or in the report.
 
-- **Field lengths** in bytes vs characters — UTF-8 multi-byte characters fill `Char(60)` faster than Latin. Increase widths for fields holding non-Latin text.
-- **`len$()` vs `nchar$()`** — `len$()` returns byte count, `nchar$()` (when available) returns character count. Use the right one for length checks.
-- **String trimming** — `left$`, `right$`, `mid$` work on bytes; truncating mid-character corrupts UTF-8.
-- **Sort order** — locale-aware sort requires `Order By` with explicit collation, not `Order By Key` alone. SQL-side `Exec Sql` with the right collation works; pure L4G ordering may misorder accents and CJK.
+## Character sets and text length
 
-For these languages, test every screen and every printed report with real content before signing off.
+- **Database**: a folder's character format (GESADS, field CODDBA) is ASCII (one byte per character,
+  European languages) or UNICODE. UCS2 is the only Unicode format supported by SQL Server; Oracle commonly
+  uses UTF8. Unicode is needed for languages with more than 256 characters (Chinese, for example);
+  TABLAN.LANUNI flags such languages.
+- **Engine**: works internally in UTF8, and script sources are UTF8.
+- **Char**: `Char NAME(N)` holds up to N characters (1 to 255), stored as double-byte characters; `len`
+  and `mid$` count characters, not bytes. Assigning a longer string truncates it to N characters, so check
+  `len()` before assigning external data; use `Clbfile` beyond 255 characters.
+- **Accents**: `ctrans(S)` with one argument replaces accented characters by unaccented ones and
+  non-printable characters by spaces. It loses information: use it for search keys or 7-bit exports only.
+- **Files**: choose the encoding per file with `Iomode adxium VALUE Using [ABV]`: 50 = ASCII, 122 = UCS2,
+  any other value = UTF8 (the default). `strencode` / `strdecode(SOURCE, DEST, TYPE)` transcode strings
+  with the same codes (50, 122, 0). Details: `sequential-files.md`.
+- **Right-to-left and CJK text**: test screens, printed reports and exported files with real data in the
+  target script before go-live.
 
-### CJK-specific
+## Gotchas
+- GESCUR does not exist: currencies are GESTCU. Countries are GESTCY, not GESACO.
+- DECNBR is a number of decimals; CURRND is a rounding precision. Do not mix them.
+- Screen field codes are not always column names (FM1 on GESTCU is column CURFMT1).
+- A `Read ... <=` on TABCHANGE can return a row of another pair: always check the key segments.
+- `GDEV.DEVISE`, `AFNC.PARAMG` and `FORMAT_ADDR` from earlier versions of this skill are not documented
+  APIs; do not use them.
+- A Char variable truncates without error: a 40-character Chinese name fits in `Char(40)`, a 41-character
+  one is cut.
 
-- Font availability — printed reports rendered through Crystal need a font that has full CJK glyph coverage installed on the report server.
-- Half-width vs full-width characters — Japanese inputs may produce either; normalize on entry if the data is queried later.
+See also: `localization.md`, `function-codes.md`, `builtin-functions.md`, `sequential-files.md`,
+`imports-exports.md`.
 
-### RTL-specific
-
-- Bidirectional rendering — mixing Arabic / Hebrew with Latin script in the same field. Syracuse handles this in browser; printed PDFs depend on the renderer.
-- Number formatting in RTL — numerals stay left-to-right but appear in an RTL paragraph. Don't reverse them manually.
-
-## Format-related pitfalls
-
-- **Hardcoded currency decimals** — `format$("F2", AMT)` ships and breaks for JPY (which has 0 decimals). Look up `CURDEC` per currency.
-- **Currency mismatch in totals** — summing `[F:SOH]AMT` across orders without converting to a base currency. Always convert and store both raw and base.
-- **Stale exchange rate** — recomputing `AMT_EUR` from `AMT_RAW` at display time uses *today's* rate, not the order date's. Persist the rate at write time.
-- **Rounding once vs at each step** — converting then summing loses pennies vs summing then converting once. Pick one and document it.
-- **Address truncation** — `left$([F:BPA]ADDLIG(0), 30)` cuts mid-character on UTF-8 input. Use `nchar$()` or test with real Japanese / Arabic addresses.
-- **Hardcoded postcode pattern** — see above. Pull from `GESACO`.
-- **`FORMAT_ADDR` not available on the patch** — check before relying. If absent, build a small `YFMTADDR` helper that reads the country's layout from `GESACO` and falls back to "name / lines / city / postcode" generic order.
-- **Sort by `Order By Key` for a customer-name search** — case- and accent-insensitive search needs a collation-aware index or `Exec Sql LOWER(strip(...))`. Plain `Order By Key` follows the column's stored byte order.
-- **Mixing left-to-right and right-to-left** in the same printed line — renderers handle differently. Test on the actual production renderer before sign-off.
-
-## Format / currency / address checklist
-
-1. Every amount display reads `CURDEC` / `CURSYM` from `GESCUR`?
-2. Currency conversions use the right date and a real exchange rate?
-3. Reports persist both raw and base-currency amounts with the rate used?
-4. Address output uses `FORMAT_ADDR` or the country-specific layout?
-5. Postcode validation pulls the pattern from `GESACO`?
-6. Field lengths sized for UTF-8 multi-byte content?
-7. CJK / RTL tested on real content (screen + print) before sign-off?
-8. Sort and search behaviour verified for accents / collation?
-
-See also: `localization.md` (messages, `[V]GLANGUE`, dates, numbers), `conventions-and-naming.md` (Y/Z rule), `workflow-email.md` (multi-language templates), `version-caveats.md` (`FORMAT_ADDR` availability), `code-review-checklist.md` (Tier 2 hardcoded-format flags).
+## Sources
+- https://online-help.sagex3.com/erp/12/en-us/Content/FCT/GESTCU.htm
+- https://online-help.sagex3.com/erp/12/en-us/Content/MCD/TABCUR.htm
+- https://online-help.sagex3.com/erp/12/en-us/Content/MCD/TABCHANGE.htm
+- https://online-help.sagex3.com/erp/12/en-us/Content/FCT/FUNCURRAT.htm
+- https://online-help.sagex3.com/erp/12/en-us/Content/FCT/GESTCY.htm
+- https://online-help.sagex3.com/erp/12/en-us/Content/MCD/TABCOUNTRY.htm
+- https://online-help.sagex3.com/erp/12/en-us/Content/MCD/BPADDRESS.htm
+- https://online-help.sagex3.com/erp/12/en-us/Content/MCD/TABLAN.htm
+- https://online-help.sagex3.com/erp/12/en-us/Content/FCT/GESADS.htm
+- https://online-help.sagex3.com/erp/12/en-us/Content/V7DEV/developer-guide_cached-classes.html
+- https://online-help.sagex3.com/erp/12/en-us/Content/V7DEV/4gl_arr.html
+- https://online-help.sagex3.com/erp/12/en-us/Content/V7DEV/4gl_format$.html
+- https://online-help.sagex3.com/erp/12/en-us/Content/V7DEV/4gl_read.html
+- https://online-help.sagex3.com/erp/12/en-us/Content/V7DEV/4gl_char.html
+- https://online-help.sagex3.com/erp/12/en-us/Content/V7DEV/4gl_len.html
+- https://online-help.sagex3.com/erp/12/en-us/Content/V7DEV/4gl_ctrans.html
+- https://online-help.sagex3.com/erp/12/en-us/Content/V7DEV/4gl_adxium.html
+- https://online-help.sagex3.com/erp/12/en-us/Content/V7DEV/4gl_strencode.html
+- https://communityhub.sage.com/us/sage_x3/b/sageerp_x3_product_support_blog/posts/reviewing-the-currency-rate-history (community: Currency rates screen path)

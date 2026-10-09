@@ -1,187 +1,191 @@
 # Reports and printing
 
-X3 has three print engines living side by side: **Crystal Reports** (legacy SAP/BusinessObjects, still dominant), **SAP Crystal for Sage** (rebadged), and **native X3 states** (older, still used for simple reports). V12 can drive all of them from L4G the same way.
+How Crystal Reports reports are declared in Sage X3 (report dictionary GESARP), where their output
+goes (destinations GESAIM, print servers), how to launch one from L4G and how to hook into the print
+chain with the AIMP3 entry points. Read this when a report must be printed, exported to a file or
+routed automatically. Plain data extracts are usually better served by an export template
+(`imports-exports.md`).
 
-## The big picture
+## Contents
+- [The pieces](#the-pieces)
+- [Report dictionary (GESARP)](#report-dictionary-gesarp)
+- [Destinations (GESAIM) and print servers](#destinations-gesaim-and-print-servers)
+- [Launching a report from L4G](#launching-a-report-from-l4g)
+- [AIMP3 entry points](#aimp3-entry-points)
+- [Gotchas](#gotchas)
+- [Sources](#sources)
 
-1. **Report definition** lives in `GESARP` (report dictionary) — name, source data, layout file, parameters.
-2. **Print code** (the layout) is a `.rpt` (Crystal) or `.dict`+`.for` (native X3) stored under `<folder>/PRT/`.
-3. **Report call** from L4G goes through a supervisor entry point (`IMPRIM`, `LECFIC`, etc.) which resolves the dictionary, renders, and routes to a **destination**.
-4. **Destinations** (`GESADI`) describe where output goes: screen, printer, file, email, Excel.
+## The pieces
+
+| Piece | Code | Role |
+|---|---|---|
+| Report dictionary | GESARP (table AREPORT) | Report code, Crystal `.rpt` file(s), parameters, scripts, default destination |
+| Print launch | AIMP (Reports) | Choose report, enter parameters and destination, print; also the Print/group menus (`RPTxx` submenus, xx = group in local menu 97) |
+| Destinations | GESAIM | Named output: preview, printer, message/file, printer file; print server list |
+| Print server | Sage X3 Print Server (Windows service, one per profile, configured in the Console) | Runs Crystal Reports for server-side output |
+| Print chain hooks | Entry points of script AIMP3 (declared in GESAPE) | Change parameters, block printer choice, post-process the file |
+
+`GESADI` is **Miscellaneous tables**, not destinations. Native "X3 states" (`.dict`/`.for`) and
+destination codes such as `ECR`/`IMP`/`FIL`/`MAI`/`EXC` are not documented — do not rely on them.
+
+## Report dictionary (GESARP)
+
+**General tab** (selected fields):
+
+| Field | Meaning |
+|---|---|
+| Report code (RPTCOD) | The code you print — not the `.rpt` file name |
+| Group (GRP) | Print group, makes the report appear under Print/group |
+| Destination (PRTDEF), Mandatory (PRTOBL) | Default destination; Mandatory forbids changing it at launch |
+| Type (PRTNAT) | Local menu 22 (Normal, Fax, Thermal, Color), used only when no formula or destination applies |
+| Add info formula (PRTFRM) | Finds a destination by user and takes priority over Destination (e.g. a formula using a site parameter) |
+| Standard script (TRTINI) / Specific script (TRTSPE) | Run **before** Crystal (initialise variables, prepare work tables) |
+| Not executable (EXEFLG), Batch only (EXEBAT), Hourly constraints (HOR) | Launch restrictions |
+| Crystal reports grid (CRYCOD, ORIENT, FORETA) | Up to 5 `.rpt` files printed in sequence (`file.ext`, `file_1.ext`, …) |
+| Authorization site (AUZFCY), Function (FNC), Access code (ACS) | Site filtering (the `.rpt` must restrict data itself), generic `RPTxx` function |
+
+**Parameter definitions tab**: one line per Crystal parameter — code (PARCOD, the name used inside
+Crystal), type (A alphanumeric, C short integer, L long integer, DCB decimal, D date, M local menu, or
+a predefined type), length, local menu, defaults (PARDEF1/PARDEF2 expressions), control formula on
+`VALUE` (PARCTL), access code. For a range, enter only the start parameter whose code ends in `deb`
+or `str`; the end parameter (`fin`/`end`, same root) is generated and passed to Crystal. A
+**Segmentation parameter** (PARSEG) splits a huge print into several outputs by value.
+
+**Data tab**: up to 5 data sources in other folders (`solution;folder` syntax) and up to 10 tables
+(print-server limit); tables of the current folder are not listed.
+
+Development loop: build the `.rpt` in Crystal Designer (RptDev directory), test it with "Report
+developer" mode, then transfer it to the server from the Report name field's contextual menu.
+Sandbox statuses (Shared, Sandbox, Commit request…) protect a report being edited. The **Form**
+button prints the current report directly — the first test when a call from code misbehaves.
+
+## Destinations (GESAIM) and print servers
+
+| Field | Meaning |
+|---|---|
+| Output type (PRT) | Preview; Printer; Message and file (one format from local menu 91); Printer/file (`.prn` image of the printer stream) |
+| Destination file (PRTZPL) | File name or directory (trailing `/` or `\`), literal or formula |
+| Printer (PRTNAM) | Windows printer name proposed at print time |
+| Export format (PRTFMT) | Crystal export format; the list depends on the Crystal Reports version |
+| Type (PRTNAT) | Local menu 22; must match the report's type unless it is the first (catch-all) value |
+| Access code (ACS) | Who may see and use the destination |
+| Servers grid | Name, Server (host/IP), Port, Profile (`DEFAULT` = first instance), Unavailability (minutes, default 5), Deactivated |
+
+Formats of local menu 91 include Word, several Excel versions, HTML, RTF, ASCII, CSV (GESAIM) and
+PDF (AIMP). Since 2025 R1 / V12.0.37 several print servers can be listed and are load-balanced
+(next available server after the last one used; an error when none is available).
+
+In AIMP the **Message** output goes through the user's MAPI e-mail client and **File** is created in
+a directory reachable from the client workstation. For unattended output, community examples use a
+GESAIM destination whose output type is file with a PDF export format.
 
 ## Launching a report from L4G
 
-### Standard pattern
+The only public Sage page on the subject is the AIMP3 entry-point page; the call below is
+**community-reported** (several Sage community threads and partner blogs):
 
 ```l4g
-Local Char PARAMS(500)
-
-# Pass parameters as "NAME=VALUE;NAME=VALUE" — the supervisor parses them
-PARAMS = "ITMREF=ITM001;FCY=NA011;DATDEB=" - num$(date$ - 30, "YYYYMMDD") -
-         ";DATFIN=" - num$(date$, "YYYYMMDD")
-
-Call IMPRIM("YRPT_STOCK", "", 1, PARAMS) From GIMP
+# Print purchase order YPONUM with report YPOH to destination YPDF (GESAIM: output type file, PDF)
+Subprog YPRINT_PO(YPONUM)
+Value Char YPONUM()
+Local Char YTBPAR(30)(1..20), YTBVAL(250)(1..20)
+  YTBPAR(1) = "commandedeb" : YTBVAL(1) = YPONUM : # parameter codes as defined in GESARP
+  YTBPAR(2) = "commandefin" : YTBVAL(2) = YPONUM
+  Call ETAT("YPOH", "YPDF", "", 0, "", YTBPAR, YTBVAL) From AIMP3
+End
 ```
 
-Arguments:
-1. Report code (as defined in `GESARP`) — Y/Z prefix for custom.
-2. Destination code (empty = default for this report).
-3. Preview flag (1 = show preview dialog; 0 = silent).
-4. Parameter string.
+| Arg | Meaning (as reported) |
+|---|---|
+| 1 | Report code (GESARP), not the `.rpt` name |
+| 2 | Destination code (GESAIM) |
+| 3 | Language (`"FRA"`, `"ENG"`…); empty = default |
+| 4 | 0/1 flag — one post: show the "print executed" message; another: write a print log |
+| 5 | Character argument passed as `""` in every example (one partner passes a function code) |
+| 6, 7 | Arrays of parameter codes and values (codes exactly as in the dictionary) |
 
-### Silent run for batch or web service
+- Community-reported: with wrong parameter codes nothing was produced and no error was raised —
+  check the codes on the Parameter definitions tab.
+- Where the file lands is driven by the destination's Destination file (PRTZPL). Community posts
+  move it afterwards with `Call MOVE(SRC, DEST, STAT) From ORDSYS`; others set `FICHIER` in a report
+  script, which the official AIMP3 page does not document — test it on your patch level.
+- AIMP can run in batch, but no dedicated standard task is delivered; for scheduled prints wrap the
+  call in your own batch process (`batch-scheduling.md`).
 
-```l4g
-Call IMPRIM("YRPT_STOCK", "FILE_PDF", 0, PARAMS) From GIMP
-```
+## AIMP3 entry points
 
-`FILE_PDF` is a pre-configured destination code (see `GESADI`) that writes a PDF to a folder. Use this in scheduled jobs — never open a preview dialog from a batch.
+Declare a specific script for the standard script AIMP3 in GESAPE (mechanism in `entry-points.md`).
+AREPORT `[ARP]` is open in every entry point.
 
-### Calling a report with no parameter dialog
+| Entry point | When / what |
+|---|---|
+| `IMPRIME` | Just before the printer is chosen; only action: `GPE` <> 0 forbids entering a printer |
+| `PARAM` | Modify any report parameter before printing |
+| `REPORT` | Just after the print order is sent; for print/file output, post-process the generated file |
+| `REPORT_ZPL` | Same, after a ZPL report is created |
+| `UPDSQLSTAT` | Just before printing; Sage's sample refreshes SQL Server statistics on AREPORTM |
 
-```l4g
-Call IMPRIM0("YRPT_STOCK", "FILE_PDF", PARAMS) From GIMP
-```
-
-`IMPRIM0` skips the interactive "enter parameters" dialog entirely — equivalent to `IMPRIM(code, dest, 0, params)` but clearer intent.
-
-## Destinations (`GESADI`)
-
-A destination bundles: driver (printer / PDF / Excel / email), options, output path, and printer queue. Common ones shipped by default:
-
-| Code | Driver | Purpose |
-|------|--------|---------|
-| `ECR` | Screen preview | Interactive |
-| `IMP` | Physical printer | Default printer |
-| `FIL` | File (PDF/RPT) | Path from destination config |
-| `MAI` | Email | SMTP, uses `ENVMAIL` — see `workflow-email.md` |
-| `EXC` | Excel | Direct `.xlsx` |
-
-Create custom destinations (Y/Z prefix) when you need a specific email template, shared folder, or printer queue.
-
-## Report parameters — conventions
-
-Standard X3 reports expect some parameters by convention:
-
-| Parameter | Meaning |
-|-----------|---------|
-| `DATDEB` / `DATFIN` | Date range, format `YYYYMMDD` |
-| `FCY` | Facility code |
-| `CPY` | Company code |
-| `CUR` | Currency |
-| `LAN` | Language (for localized reports) |
-
-Custom reports should reuse these names where possible so scheduling and destination codes work the same way.
-
-## Running a native X3 state (non-Crystal)
-
-Older reports use the native X3 state engine. Call is identical from L4G:
+Parameters are in `PARAMETRE(1..NBPAR)` as `"name=value"` strings — the name the AIMP3 page's text gives
+in English and French; its sample is inconsistent (`PARAMETER` in the `GETPARAM` calls). Prefixes: `__` = X3 only, not sent (`__DESTINATION`: 0 preview, 1 print, 2 e-mail,
+3 file); `_` = Crystal settings whose values are prefixed with `chr$(1)` (`_PrinterName`,
+`_Orientation`, `_FormatExport`, `_ExportFile`…); `X3…` = context set by the supervisor (`X3ETA` report
+code, `X3USR`, `X3LAN`…); others come from the dictionary. `GETPARAM` / `SETPARAM From ETAT` read and
+write them. The print server is not a parameter: it is the local variable `SERVER` (Char 30).
 
 ```l4g
-Call IMPRIM("LISCLI", "", 1, "BPCNUM=BP001") From GIMP
-```
+# YAIMP3 - specific script for AIMP3 entry points (GESAPE)
+$ACTION
+  Case ACTION
+    When "IMPRIME" : Gosub YIMPRIME
+    When "PARAM"   : Gosub YPARAM
+  Endcase
+Return
 
-The supervisor looks at the dictionary — if the report's `.rpt` exists it runs Crystal; otherwise it falls back to the native engine with the `.for` layout file.
+$YIMPRIME
+  If [F:ARP]RPTCOD = "YPOH" : GPE = 1 : Endif : # users may not pick another printer
+Return
 
-## Running a report in an asynchronous batch
-
-Inside a `.trt` used as a batch task:
-
-```l4g
-##############################################################
-# YBATCH_PRINT_DAILY — scheduled daily, prints stock report per site
-##############################################################
-$MAIN
-Local File FACILITY [FCY]
-Local Char PARAMS(500)
-
-For [FCY] Where FCYSTA = 1
-    PARAMS = "FCY=" - [F:FCY]FCY - ";DATDEB=" - num$(date$, "YYYYMMDD")
-    Call IMPRIM0("YRPT_STOCK", "FILE_PDF", PARAMS) From GIMP
-Next
+$YPARAM
+  # Gosub label: it shares AIMP3's locals (PARAMETRE, NBPAR, SERVER), which a Subprog could
+  # not set; the unique Y-prefixed name keeps this Local from clashing with a standard one
+  Local Char YAIMP3_VAL(250)
+  Call GETPARAM("__DESTINATION", NBPAR, PARAMETRE, [L]YAIMP3_VAL) From ETAT
+  If [L]YAIMP3_VAL <> "1" : Return : Endif      : # printer output only
+  If [F:ARP]RPTCOD = "YPOH"
+    [L]SERVER = "YPRTSRV01"                      : # dedicated print server for this report
+  Endif
 Return
 ```
 
-Silent (`IMPRIM0`), one call per site, output written to files by the `FILE_PDF` destination. Schedule via `GESABA` (batch task definition) + `GESAPL` (batch server).
-
-## Printing from an entry transaction — after save
-
-Typical: print a sales order confirmation after the user saves it.
-
-```l4g
-$APBAS
-    If [M:SOH]SOHTYP = 1                     # only for firm orders
-        Local Char PAR(200)
-        PAR = "SOHNUM=" - [M:SOH]SOHNUM
-        Call IMPRIM("YSOH_CONFIRM", "", 1, PAR) From GIMP
-    Endif
-Return
-```
-
-The user gets a print-preview after save; they can send to email / printer from there.
-
-## Embedding report output in an email
-
-Combine the email destination with a template:
-
-```l4g
-# Send via destination code "MAI_CLIENT" configured to email the attached PDF
-Local Char PAR(500)
-PAR = "SOHNUM=" - [L]NUM -
-      ";EMAIL=" - [L]CUSTOMER_EMAIL -
-      ";SUBJECT=Confirmation commande " - [L]NUM
-Call IMPRIM0("YSOH_CONFIRM", "MAI_CLIENT", PAR) From GIMP
-```
-
-The destination's email template resolves `%SUBJECT%` / `%EMAIL%` tokens against the `PAR` string. This is cleaner than hand-rolling SMTP from L4G.
-
-## The report workflow — `GESAWA` hook
-
-For fully unattended report-and-send flows, wire the print into a workflow rule rather than a script — define **event → condition → action: print report X to destination Y**. Less code, easier to audit. See `workflow-email.md`.
-
-## Generating Excel output directly
-
-Sometimes you don't want a report at all — just a data extract to `.xlsx`. Two paths:
-
-### Path 1 — report to Excel destination
-
-Define the report with an Excel-oriented layout, then:
-
-```l4g
-Call IMPRIM0("YEXTRACT", "EXC_EXPORT", PARAMS) From GIMP
-```
-
-### Path 2 — bypass reports, write directly
-
-For raw tabular data where a Crystal layout is overkill, use the sequential-file API with CSV semantics:
-
-```l4g
-Openo "TMP/extract_" - num$([S]curpos) - ".csv" Using 7
-Writeseq '"ITMREF","DESC","QTY"' Using 7
-For [ITM] Where ITMSTA = 1
-    Writeseq '"' - [F:ITM]ITMREF - '","' -
-                   [F:ITM]ITMDES1(0) - '","' +
-                   num$([F:ITM]QTY) - '"' Using 7
-Next
-Close 7
-```
-
-Excel opens CSV natively; prefer `.csv` over `.xlsx` unless you need formulas or styling.
-
-## Report troubleshooting
-
-When a report fails or produces wrong output:
-
-1. **Re-run from `GESARP`** with the same parameters — isolates whether it's your call vs the report definition.
-2. **Check the trace** in **Administration → Utilities → Verifications → X3 tracing** — supervisor logs every `IMPRIM` call with resolved parameters.
-3. **Destination config** — a PDF destination with a bad output path silently writes nowhere. Look at `GESADI` and test with `ECR` first.
-4. **Parameter parsing** — the supervisor splits on `;`. If a parameter value contains `;` or `=`, you need to escape it (`\;`, `\=`) or use the structured variant.
-5. **Localization** — reports pick the language from the current user or the `LAN` parameter. If labels come out in English when you expected French, check both.
+Sage's PARAM sample goes further: it reads the printer's defaults with `Selimp` and stores
+`_PrinterName`, `_PrinterDriver`, `_PrinterPort`, `_PrinterDescription` and `_Orientation` with
+`SETPARAM`. Workflow rules can also fire when a report is launched (event type **Print**, see
+`workflow-email.md`).
 
 ## Gotchas
+- `IMPRIM`, `IMPRIM0` and `GIMP` print APIs are not documented anywhere; use `ETAT From AIMP3`
+  (community-reported) or the AIMP function.
+- Report parameters are not a `"NAME=VALUE;…"` string: they are two arrays (code, value).
+- Tables read from another folder must be declared on the Data tab (at most 10, a print-server
+  limit); undeclared tables are read in the current folder.
+- Site authorisation in GESARP only works if the `.rpt` filters on the authorised sites.
+- A printer prints one report at a time; the print server runs several requests in parallel, and
+  Linked prints (IMPLIE) serialise reports sent to the same printer.
+- Sub-divided prints to a printer file produce `myfile01.prn`, `myfile02.prn`…
+- On SQL Server, parameters can come out wrong when AREPORTM statistics are stale — that is what
+  the UPDSQLSTAT entry point is for.
+- Multi-language (MULLAN) unchecked generates the report only in its original language.
+- Never open a preview from batch code: use a destination of type file.
 
-- **Report cache** — the supervisor caches the compiled `.rpt`. After modifying a Crystal template, force a recompile via **Validation** in the report editor, or the old layout keeps rendering.
-- **File locks** — if a previous run left the PDF open (Acrobat, Excel), the next `IMPRIM` silently overwrites with a weird filename suffix. Always close before re-running in dev.
-- **Crystal and folder context** — Crystal connects to the database using the *runtime user*, not the L4G caller. Ensure the runtime user has read ACL on every table the report joins.
-- **Long parameter strings** — there's a hard limit around 1000 chars in some dest drivers. Split huge selections into multiple calls or pre-filter with a temp table.
-- **Silent failures** — if `IMPRIM0` can't find the report, it may set `[S]stat1` without raising an error. Check `stat1` and the trace.
+See also: `entry-points.md`, `workflow-email.md`, `batch-scheduling.md`, `imports-exports.md`.
+
+## Sources
+- https://online-help.sagex3.com/erp/12/en-us/Content/FCT/GESARP.htm
+- https://online-help.sagex3.com/erp/12/en-us/Content/FCT/GESAIM.htm
+- https://online-help.sagex3.com/erp/12/en-us/Content/FCT/AIMP.htm
+- https://online-help.sagex3.com/erp/12/en-us/Content/OBJ/ADC_AIMP3.htm
+- https://online-help.sagex3.com/erp/12/en-us/Content/FCT/GESADI.htm
+- https://matteo72.wordpress.com/2012/11/17/x3-4gl-procedure-to-launch-a-report/ (ETAT arguments, community)
+- https://communityhub.sage.com/us/sage_x3/f/general-discussion/187612/automatically-print-a-report-in-a-network-directory
+- https://www.rklesolutions.com/blog/sage-x3-crystal-report-parameters
+- https://communityhub.sage.com/sage-global-solutions/sage_x3/f/general-discussion/228097/print-files-to-an-s3-bucket

@@ -1,296 +1,268 @@
-# Performance — indexes, locks, joins, profiling
+# Performance
 
-How to keep custom L4G fast in production. Most performance incidents in X3 boil down to four causes: a query without a usable index, a transaction held across a long iteration, an N+1 read, and unbounded `For` over a table that grows.
+How to keep specific L4G code fast on V12: measure first, let the database filter and join, fetch only the columns
+you need, work set-based, and keep locks and transactions short. Read it when a screen, batch or web service is
+slow, or when reviewing loops over large tables. Statement syntax and the transaction idiom are canonical in
+`database.md`; tracing tools in `debugging-traces.md`.
 
-This file covers the diagnostic patterns and the L4G primitives that usually fix them.
+## Contents
+- [Measure before tuning](#measure-before-tuning)
+- [Index-driven access](#index-driven-access)
+- [What the Where clause sends to SQL](#what-the-where-clause-sends-to-sql)
+- [Fetch fewer columns: Columns](#fetch-fewer-columns-columns)
+- [Joins with Link instead of N+1 reads](#joins-with-link-instead-of-n1-reads)
+- [Set-based work](#set-based-work)
+- [Locks and transaction granularity](#locks-and-transaction-granularity)
+- [Hints](#hints)
+- [Anti-patterns](#anti-patterns)
+- [Gotchas](#gotchas)
+- [Sources](#sources)
 
-## The fast-path mental model
+## Measure before tuning
 
-Three orders-of-magnitude rules to internalize:
-
-| Operation | Typical cost | Multiplier on a 1M-row table |
-|-----------|--------------|------------------------------|
-| `Read` on a primary key | < 1 ms | × 1 |
-| `Read` on a covering index | 1 – 5 ms | × 1 |
-| `For` with `Order By Key` (covering index) | 5 – 50 ms / 1000 rows streamed | × 1 |
-| `For` filter on non-indexed column | full scan, seconds | × 1000 |
-| `Exec Sql` ad-hoc with a join | depends on plan | wide range |
-| `Readlock` while another session holds the lock | wait, possibly indefinite | n/a |
-
-Order of preference for any data access:
-
-1. Primary key `Read`.
-2. Secondary key `Read` (the X3 dictionary defines them in `GESATB`).
-3. `For ... Order By Key <KEY>` walking a key.
-4. `Link [TBL2]` to join (engine picks an index).
-5. `Exec Sql` with explicit join — last resort, when the L4G primitives can't express the predicate.
-
-## Indexes — what X3 gives you
-
-In `GESATB` (Tables) → key tab, every table declares an ordered list of keys. The standard `BPCNUM0` on `BPCUSTOMER`, `ITMREF0` on `ITMMASTER`, `SOHNUM0` on `SORDER` are primary keys; secondary keys carry suffixes like `BPCNUM1`, `ITMREF1`.
-
-To make a `For` use a key, name it explicitly:
+**Timestamps.** `timestamp$` returns milliseconds since 1970-01-01 GMT as a string; store it in a `Decimal`
+(the value exceeds 2^32). `time` returns seconds since midnight (local time of the process server).
 
 ```l4g
-For [ITM] Where ITMSTA = 1 Order By Key ITMSTA0
-    # uses the ITMSTA0 secondary key — sequential walk, no scan
+Local Decimal YT0, YMS
+Local Char YLOGNAME(250)
+YT0 = val(timestamp$)
+Call YCHECKBAL(YLOGNAME) From YACCLIB
+YMS = val(timestamp$) - YT0
+```
+
+**Profiler.** `func ASYRTIMING.START(FILE, GOSUB_FLAG)` / `func ASYRTIMING.STOP(CONTEXT, FILE, GOSUB_FLAG, LOGFILE)`.
+Empty file name = `<user>_<adxuid(1)>.tra` in `tmp`; flag 1 also profiles `Gosub`. The result lists every
+Gosub/Call with call count, total milliseconds and percentage of the run, sorted descending.
+
+```l4g
+Local Integer STAT
+Local Char YLOGNAME(250), YPROFILE(250)
+STAT = func ASYRTIMING.START("", 1)
+Call YCHECKBAL(YLOGNAME) From YACCLIB
+STAT = func ASYRTIMING.STOP(GACTX, "", 1, YPROFILE) : # YPROFILE = generated report file
+```
+
+**Other tools.**
+- Engine log with mode 4 (`Read`/`For`) or 8 (driver requests) shows the statements actually sent —
+  `debugging-traces.md`.
+- For a slow standard screen: user parameter `DBG` = Yes (chapter Supervisor, group DEV) adds a Diagnostic menu
+  with "Activation timing" (community-reported, Sage support blog).
+- On SQL Server, a Profiler/Extended Events trace filtered on the client process id of the user's `sadoss` process
+  (found in Development > Utilities > System monitor > Users, community-reported) gives real execution plans.
+
+## Index-driven access
+
+Keys are declared on the table in the dictionary (GESATB) and are the only access paths the engine can promise.
+
+```l4g
+Local File BPCUSTOMER [BPC]
+Local Integer YNB
+Local Char YCODE(20)
+YCODE = "C001"
+# 1. One row by its key
+Read [BPC]BPC0 = [L]YCODE
+If fstat = [V]CST_ANOREC
+  YNB = 0
+Endif
+# 2. Key range: From/To on the key segments
+For [BPC]BPC0 From "C000" To "C999"
+  YNB += 1
+Next
+# 3. Filter sent to the database (becomes LIKE 'J%')
+For [BPC]BPC0 Where pat(BPCNAM, "J*") <> 0
+  YNB += 1
+Next
+# 4. No ordering needed: let the database choose
+For [BPC]reckey Where pat(BPCNAM, "J*") <> 0
+  YNB += 1
 Next
 ```
 
-Without `Order By Key`, the engine guesses. On a small table the guess is fine; on a big one it's a coin flip and you get a scan.
+- A `For` on a key reads in that key's order; `[ABV]reckey` asks for no particular order.
+- Sorting is declared on `Local File … Order By Key NAME = COL1;COL2` or `Filter … Order By`, never on the `For`
+  line. A sort that matches no database index makes the database sort the whole selection — if a custom process
+  needs it often, add a key in GESATB (specific keys follow the X/Y/Z naming rules, `conventions-and-naming.md`).
+- Nested `For [ABV]KEY(n)` loops on increasing break levels read once and group; only the outer loop accepts
+  `Where` / `From … To` (put other filters on `Local File` or `Filter`).
 
-### Adding a custom index
+## What the Where clause sends to SQL
 
-For a custom field that appears in `Where` clauses repeatedly, declare a key:
+Per Sage's Where documentation, expressions that do not involve table columns are evaluated once and sent as
+values; supported operators/functions on columns are translated to SQL; everything else is filtered by the engine
+**after** the rows were fetched.
 
-1. `GESATB` on the table → key tab → add `YKEY1` with the relevant column(s)
-2. **Validate** the table — generates the SQL DDL
-3. `Activity dictionary → patch` to apply on target folder
-4. Replace your `For [TBL] Where YFLD = …` with `For [TBL] Where YFLD = … Order By Key YKEY1`
+| On table columns | Sent to the database? |
+|---|---|
+| `= < > <= >= <>`, `and or not xor`, `+ - * / ^` (no `-` on strings) | Yes |
+| `left$ right$ mid$ seg$ len num$ ctrans tolower toupper val ascii chr$ instr string$ space$ vireblc` | Yes |
+| `abs int ar2`, `find min max` (not on dates) | Yes |
+| `pat(COL, P) <> 0` / `= 0`, `find(COL, LIST) <> 0` / `= 0` | Yes (`LIKE`, `IN`) |
+| `pat(COL, P)` alone, `find(...)` alone | **No** — engine-side |
+| Date functions or date arithmetic on columns (`[F:X]D2 - [F:X]D1 >= 5`) | **No** — engine-side |
+| Array indexed by a column value | **No** |
 
-Index everything that filters in production paths. Indexes are cheap on read-heavy tables; storage cost is negligible compared to a scan.
+Prefer a range (`RANK >= 4 and RANK <= 7`) to `find(RANK,4,5,6,7) <> 0`, and `find` to a chain of `or`.
+Compute date bounds in a local variable (or as an expression without columns) instead of on the column.
+A `func` call cannot appear in the `Where` of `File`, `Filter` or `For` at all (4gl_func.html: it cannot be
+transmitted to the database): call it before and put its result in a local variable.
 
-## `Read` vs `Readlock` — only lock when you'll write
+## Fetch fewer columns: Columns
 
-```l4g
-Read     [SOH]SOHNUM0 = "S001"          # consult — no lock
-Readlock [SOH]SOHNUM0 = "S001"          # consult AND mark for update — holds lock until tx ends
-```
-
-Pattern: read first to validate, then readlock + rewrite under transaction:
-
-```l4g
-Read [SOH]SOHNUM0 = [L]NUM
-If fstat Or [F:SOH]SOHSTA = 9 : Return : Endif    # cheap reject
-
-Trbegin [SOH]
-Readlock [SOH]SOHNUM0 = [L]NUM
-If fstat : Rollback : Return : Endif              # someone else got it
-[F:SOH]SOHSTA = 9
-Rewrite [SOH]
-If fstat : Rollback : Return : Endif
-Commit
-```
-
-Locking on the cheap-reject path doubles latency and serializes concurrent readers for no benefit.
-
-## Transactions — keep them short
-
-The deadlock formula in production X3:
-
-```
-deadlock_risk ∝ (rows touched) × (time held) × (concurrent writers)
-```
-
-Reduce any factor to reduce risk.
-
-### Anti-pattern: long iteration inside a transaction
+`Read`/`For` issue `select *` by default. `Columns [ABV](COL1, COL2)` restricts the columns loaded (and those written
+back by `Rewrite`/`RewriteByKey`; `Write` still writes the whole `[F]` class). It applies to `For`; it applies to
+`Read`/`Readlock` only with `Extended`. `Columns [ABV]` restores all columns. The restriction is scoped to the
+`Local File` nesting level.
 
 ```l4g
-Trbegin [SOH]
-For [SOH] Where SOHSTA = 1
-    [F:SOH]SOHSTA = 9
-    Rewrite [SOH]
+Local File BPARTNER [BPR]
+Local Integer YNB
+Columns [BPR](BPRNUM, BPRNAM)
+For [BPR]
+  YNB += 1
 Next
-Commit
+Columns [BPR]
 ```
 
-On 100k orders, this holds 100k row locks for the loop's duration. Other sessions block, the engine deadlocks, the user sees timeouts.
-
-### Pattern: per-row transaction
+## Joins with Link instead of N+1 reads
 
 ```l4g
-For [SOH] Where SOHSTA = 1
-    Trbegin [SOH]
-    Readlock [SOH]SOHNUM0 = [F:SOH]SOHNUM
-    If fstat : Rollback : Continue : Endif
-    [F:SOH]SOHSTA = 9
-    Rewrite [SOH]
-    If fstat : Rollback : Continue : Endif
-    Commit
+Local File BPCUSTOMER [BPC], AUTILIS [AUS]
+Local Integer YNB
+# N+1: one SELECT for the loop + one SELECT per customer
+For [BPC]BPC0
+  Read [AUS]CODUSR = [F:BPC]CREUSR
+  If fstat = [V]CST_AOK
+    YNB += 1
+  Endif
+Next
+# One joined SELECT. ~= inner join (faster, drops customers without user), = left outer join
+Link [BPC] With [AUS]CODUSR ~= [BPC]CREUSR As [YBU]
+Columns [YBU]([BPC]BPCNUM, [BPC]BPCNAM, [AUS]CODUSR)
+For [YBU]
+  YNB += 1
 Next
 ```
 
-Each row holds its lock for milliseconds — much higher concurrency. Use this for batches.
+- Syntax is `Link [MAIN] With [CLASS]KEY = expr, … As [LNK]`; the linked side is named by one of its **keys**.
+  Up to 12 tables per link, 8 links per main table, tables on the same server.
+- No `Write`/`Rewrite`/`Update`/`Delete` through the link abbreviation; data lands in each table's `[F]` class.
+- On an outer join, missing rows are SQL NULLs: `Where [AUS]COL = ""` does **not** select the unmatched rows.
+- On SQL Server, declare a join after the joins whose columns it uses. More: `database.md`.
 
-### Pattern: bounded batch transaction
+## Set-based work
 
-When per-row tx is too granular (auditing overhead, 10× slower):
+One statement beats a loop of single-row statements:
+
+| Need | Use |
+|---|---|
+| Same change on many rows | `Update [ABV] Where … With COL = expr` (check `fstat`, then `adxuprec`) |
+| Delete many rows | `Delete [ABV] Where …` (rows in `adxdlrec`) |
+| Aggregates, complex joins | `For (Decimal TOTAL) From DBTYPE Sql "select …" As [YSUM]` |
+| DDL / technical DML you own | `Execsql From DBTYPE Sql "…"` (rows in `adxsqlrec`) |
 
 ```l4g
-Local Integer N
-N = 0
-Trbegin [SOH]
-For [SOH] Where SOHSTA = 1
-    Rewrite [SOH] With SOHSTA = 9
-    Incr N
-    If mod(N, 500) = 0
-        Commit
-        Trbegin [SOH]
+Local Integer DBTYPE
+Local Char YDB(1), YREQ(250)
+Local Decimal YTOTAL
+DBTYPE = fmet GACTX.APARAM.AGETVALNUM([V]CST_ALEVFOLD, "", "TYPDBA")
+YDB = string$(DBTYPE = 1, "O") + string$(DBTYPE = 2, "S")
+YREQ = "select sum(Y_BALANCE_0) from YACCOUNT"
+For (Decimal TOTAL) From YDB Sql YREQ As [YSUM]
+  YTOTAL = [F:YSUM]TOTAL
+Next
+```
+
+`Sql`/`Execsql` take the database type ("O"/"3" Oracle, "S"/"5" SQL Server) and raw SQL with physical names
+(Sage's examples use the indexed column form such as `BPCNAM_0`). They bypass the class layer and standard
+logic (rules, entry points, controls); database errors are raised as runtime errors (trap with
+`Onerrgo`). Never concatenate user input into them — `security-permissions.md`.
+
+## Locks and transaction granularity
+
+- `Read` to display or validate; `Readlock` only right before a `Rewrite` inside a transaction. `Readlock … With
+  lockwait = N` bounds the wait (seconds); the default comes from `[S]lockwait`.
+- `For … With Lock` is discouraged by Sage: Oracle locks the whole selection at once, SQL Server row by row.
+- Symbol locks (`Lock`, table APLLCK) serialise users and create contention; V7-style code uses optimistic
+  `RewriteByKey` with UPDTICK — `database.md`.
+- Keep `Trbegin … Commit` free of user dialogs, HTTP calls, file waits and `Sleep`.
+- A long batch should commit in small units, never one transaction around everything:
+
+```l4g
+##############################################################
+# YBLOCK_NEG - one short transaction per account (Y_BLOCKED: specific flag)
+##############################################################
+Subprog YBLOCK_NEG
+Local File YACCOUNT [YACC]
+Local Char YCODES(20)(1..)
+Local Integer I, N
+Local Shortint TRANS_OPEN
+  [L]TRANS_OPEN = adxlog
+  If [L]TRANS_OPEN <> 0 : End : Endif : # cannot chunk inside the caller's transaction
+  Columns [YACC](Y_ACCNUM)
+  For [YACC] Where Y_BALANCE < 0
+    N += 1
+    YCODES(N) = [F:YACC]Y_ACCNUM
+  Next
+  Columns [YACC]
+  For I = 1 To N
+    Trbegin [YACC]
+    Update [YACC] Where Y_ACCNUM = YCODES(I) and Y_BALANCE < 0 With Y_BLOCKED = 1
+    If fstat = 0
+      Commit
+    Elsif adxlog = 1
+      Rollback : # fstat 1/3 on Update: the engine already rolled back
     Endif
-Next
-Commit
+  Next I
+End
 ```
 
-500 rows per commit is a starting point — tune to the table's lock density.
+## Hints
 
-## N+1 reads → use `Link`
+`For [ABV]KEY Hint Key OTHERKEY …` suggests an index to the database; `With Nohint` (the default) lets it decide.
+Sage reserves hints for exceptional cases: the effect differs between Oracle and SQL Server, it freezes a strategy
+the optimizer would adapt from statistics, and a database upgrade can make it harmful. Document any hint you keep.
 
-The classic N+1:
-
-```l4g
-For [SOH] Where ORDDAT = date$
-    Read [BPC]BPCNUM0 = [F:SOH]BPCORD       # 1 read per order
-    [L]NAME = [F:BPC]BPCNAM(0)
-Next
-```
-
-With `Link`:
-
-```l4g
-For [SOH] Where ORDDAT = date$
-    Link [BPC] With [F:SOH]BPCORD = [F:BPC]BPCNUM0
-    [L]NAME = [F:BPC]BPCNAM(0)
-Next
-```
-
-The engine emits a single SQL query with a join. On 10,000 orders, drops from ~8 seconds to ~300 ms.
-
-`Link` works when the relation is many-to-one and the linked key exists. For optional links (`Left Join` semantics), `Link [BPC]` and check `[F:BPC]BPCNUM = ""` after the link — the engine sets it to empty when no row matches.
-
-## `For ... Order By` — when sort matters
-
-Sorted output without `Order By Key`:
-
-```l4g
-For [SOH] Where ORDDAT >= date$ - 30
-    # rows in undefined order — could be insertion order, key order, or chunk-shuffled
-Next
-```
-
-Forcing a key gives sorted output **for free** (the index is already ordered):
-
-```l4g
-For [SOH] Where ORDDAT >= date$ - 30 Order By Key SOHNUM0
-    # rows in SOHNUM ascending
-Next
-```
-
-Forcing an arbitrary `Order By <field>` triggers an external sort:
-
-```l4g
-For [SOH] Where ORDDAT >= date$ - 30 Order By BPCORD
-    # engine fetches all rows, sorts in memory — costly on big sets
-Next
-```
-
-Use a key when one matches the desired order; only use plain `Order By` when no key fits.
-
-## `Exec Sql` — when L4G primitives aren't enough
-
-Use cases where embedded SQL beats the primitives:
-
-- Aggregates: `SELECT SUM(QTY) FROM …` instead of `For … Next` in L4G
-- Multi-table joins beyond what `Link` chains
-- Vendor-specific predicates (regex, JSON operators, window functions)
-
-```l4g
-Local Char    QRY(2000)
-Local Decimal TOTAL
-
-QRY = "SELECT SUM(QTYSTU) FROM SORDERQ WHERE SOHNUM = '" - [L]NUM - "'"
-Exec Sql QRY On 0 Into TOTAL
-If [S]stat1 : ... handle : Endif
-```
-
-Always check `[S]stat1` after `Exec Sql` (not `fstat` — `Exec Sql` uses `stat1`).
-
-Beware: an `Exec Sql` query can return more rows than your variable holds — bind into an array or use `On 0 Into` for scalar results only.
-
-### SQL plan inspection
-
-When a query is slow, get the plan from the database side, not from L4G. The X3 trace (`SELECT` toggle in supervisor tracing) shows the SQL — paste it in `EXPLAIN` (or `SET STATISTICS` for SQL Server).
-
-## Profiling — find the hot spot
-
-### 1. Trace timestamps
-
-```l4g
-Local Decimal T0
-T0 = time$ * 1000             # millis since midnight, decimal
-
-# … work …
-
-Call ECRAN_TRACE("Step 1: " - num$(time$ * 1000 - T0) - " ms", 0) From GESECRAN
-T0 = time$ * 1000
-```
-
-`debugging-traces.md` for trace levels.
-
-### 2. Supervisor tracing
-
-**Administration → Utilities → Verifications → X3 tracing** records every supervisor call with timing. Reproduce the slow path with the trace on, then inspect the log.
-
-### 3. SQL trace
-
-Same place, toggle "SQL". Every query the engine emits appears with timing — you find unindexed scans by sorting on duration.
-
-### 4. `funfat` / `stat1` for diagnostic codes
-
-When a script returns slowly with a status, `[S]funfat` and `[S]stat1` carry detail. Log them on suspicion.
-
-## Cache when you can
-
-Within one script, repeated lookups should cache:
-
-```l4g
-Local Char  PARAM_VAL(50)
-Local Char  LAST_KEY(20)
-Local Char  LAST_VAL(50)
-
-For [SOH] Where ORDDAT = date$
-    If [F:SOH]CUR <> LAST_KEY
-        LAST_VAL = func AFNC.PARAMG("CUR", [F:SOH]CUR, "SYM")
-        LAST_KEY = [F:SOH]CUR
-    Endif
-    PARAM_VAL = LAST_VAL
-    # … use PARAM_VAL …
-Next
-```
-
-For cross-script caching, use a session global (`[V]Y…`) initialised once at session start.
-
-## Concurrency context — pool sizing and batch scheduling
-
-For SOAP / REST services, the AWS pool (`GESAPO`) caps parallel sessions: `min ≥ peak concurrent callers`, `max ≤ 2 × min`. Higher caps invite lock thrashing. See `web-services-soap.md` for the full settings.
-
-For long-running batches (`GESABA` / `GESAPL`), schedule heavy work at off-hours, pace per-row-tx batches with `Sleep` if they touch hot tables, and use the `Recurrent` flag rather than wake-loops. See `batch-scheduling.md`.
-
-## Common anti-patterns to flag
+## Anti-patterns
 
 | Anti-pattern | Fix |
-|--------------|-----|
-| `For` filter on non-indexed column | Add an index in `GESATB`; rerun with `Order By Key` |
-| `Read` inside a `For` over a related table | Use `Link` |
-| `Readlock` on read-only path | Use `Read` |
-| `Trbegin` outside the loop, `Commit` after | Move to per-row tx |
-| `Exec Sql` for a single-row primary-key fetch | Use `Read` |
-| `Order By <field>` instead of `Order By Key` | Use a key when one matches |
-| `Infbox` / `Errbox` in a hot loop | Trace and aggregate |
-| Repeated `func AFNC.PARAMG` in a loop | Cache the resolved value |
-| Custom batch wakes every 30 s polling | Use `Recurrent` schedule, not poll |
-| Chains of 5+ `Link` traversals | Replace with `Exec Sql` join — fewer round trips |
+|---|---|
+| `For [ABV]` then `If` on columns in L4G | Put the condition in `Where` |
+| `pat(COL, "x*")` without `<> 0` | `pat(COL, "x*") <> 0` (becomes `LIKE`) |
+| Date arithmetic on columns in `Where` | Pre-compute the bound outside the column expression |
+| `COL = 1 or COL = 2 or COL = 3` | Range, else `find(COL, 1, 2, 3) <> 0` |
+| `Read` of a parent row inside a `For` | `Link` + `Columns` |
+| Loops over wide tables loading every column | `Columns` |
+| `Readlock` on a read-only path | `Read` |
+| `For … With Lock` / Readlock-Rewrite loop for a uniform change | `Update … Where … With` |
+| One transaction around a whole batch | Short transactions per unit (above) |
+| Frequent sort on a non-indexed order | Key in GESATB matching the order |
+| New code relying on symbol `Lock` | Optimistic `RewriteByKey` |
+| Hints added "just in case" | Remove; measure |
+| Parameter or setup reads inside a hot loop | Read once before the loop |
 
-When the engine's plan is wrong, force a hint via `Exec Sql` with a vendor-specific directive — document the reason; hints rot across patches and DB upgrades.
+## Gotchas
 
-## Profiling checklist for a slow custom screen / batch
+- `For (…) From … Sql` and `Execsql` are database-specific SQL: test on the database type of every target folder.
+- `Columns` is managed per `Local File` nesting level: a sub-program that re-declares the table with its own
+  `Columns` does not change the caller's list. Reset explicitly with `Columns [ABV]` when you are done.
+- A `Filter` set inside a called sub-program on a table it did not re-declare stays active for the caller.
+- Timings in development folders with small data prove nothing; measure on a copy of production volumes.
 
-1. Turn on supervisor tracing (`SQL` + `Subprog`) for the slow path.
-2. Run once, scan the log for queries > 100 ms.
-3. For each slow query, check the table key list — does a covering key exist?
-4. If not, can one be added without breaking the standard schema (use a `Y` key)?
-5. Check for N+1 patterns (same query issued in a loop) — refactor to `Link`.
-6. Check transaction boundaries — is anything held across the loop?
-7. Re-measure with traces still on; remove tracing for production once stable.
+See also: `database.md`, `debugging-traces.md`, `diagnostics-postmortem.md`, `batch-scheduling.md`,
+`code-review-checklist.md`.
 
-See also: `database.md` (`UPDTICK`, `Link`, `Exec Sql`), `code-review-checklist.md` (Tier 5 perf flags), `debugging-traces.md` (`stat1`/`funfat`, supervisor tracing), `web-services-soap.md` (AWS pool sizing).
+## Sources
+- https://online-help.sagex3.com/erp/12/en-us/Content/V7DEV/developer-guide_profiling-code.html
+- https://online-help.sagex3.com/erp/12/en-us/Content/V7DEV/4gl_timestamp$.html , …/4gl_time.html
+- https://online-help.sagex3.com/erp/12/en-us/Content/V7DEV/4gl_for.html
+- https://online-help.sagex3.com/erp/12/en-us/Content/V7DEV/4gl_where.html
+- https://online-help.sagex3.com/erp/12/en-us/Content/V7DEV/4gl_func.html (no `func` in a Where)
+- https://online-help.sagex3.com/erp/12/en-us/Content/V7DEV/4gl_filter.html
+- https://online-help.sagex3.com/erp/12/en-us/Content/V7DEV/4gl_columns.html
+- https://online-help.sagex3.com/erp/12/en-us/Content/V7DEV/4gl_link.html
+- https://online-help.sagex3.com/erp/12/en-us/Content/V7DEV/4gl_hint.html
+- https://online-help.sagex3.com/erp/12/en-us/Content/V7DEV/4gl_readlock.html , …/4gl_lock.html
+- https://online-help.sagex3.com/erp/12/en-us/Content/V7DEV/4gl_sql.html , …/4gl_execsql.html , …/4gl_adxsqlrec.html
+- https://online-help.sagex3.com/erp/12/en-us/Content/V7DEV/4gl_adxuprec.html , …/4gl_delete.html , …/4gl_adxdlrec.html
+- https://communityhub.sage.com/sage-global-solutions/sage_x3/b/sage-x3-support-insights-ame/posts/sage-x3-performance-blueprint-optimization-troubleshooting (community)

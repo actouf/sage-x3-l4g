@@ -1,256 +1,262 @@
 # Debugging and traces
 
-How to find out what your L4G code is actually doing when the user reports "it doesn't work".
+Canonical home for trace/log files, error trapping, the engine log and the interactive debugger in Sage X3 V12.
+Read it when code "does nothing", fails silently in batch, or you must explain a failure after the fact.
+Production triage lives in `diagnostics-postmortem.md`; timing and query tuning in `performance.md`.
 
-## The trace window — first reflex
+## Contents
+- [Which tool for which question](#which-tool-for-which-question)
+- [V12 log files: the ALOG class](#v12-log-files-the-alog-class)
+- [Classic trace sub-programs](#classic-trace-sub-programs)
+- [Reading log files: LECTRACE and AREADLOG](#reading-log-files-lectrace-and-areadlog)
+- [Trapping runtime errors](#trapping-runtime-errors)
+- [Engine log: openlog, Engine trace, X3 session logs](#engine-log-openlog-engine-trace-x3-session-logs)
+- [Interactive debugger (Eclipse)](#interactive-debugger-eclipse)
+- [System variables worth dumping](#system-variables-worth-dumping)
+- [Gotchas](#gotchas)
+- [Sources](#sources)
 
-In Classic and V12, the runtime has a trace channel that any `Call ECR_TRACE` / `Call ECRAN_TRACE` writes to. The user or developer can see it via:
+## Which tool for which question
 
-- **Classic UI** — the trace is shown at the end of a function's execution as a popup or separate window
-- **V12 / Syracuse** — the trace appears in the UI after the action, or is downloadable as a file from the server
+| Question | Tool | Where |
+|---|---|---|
+| What did my batch / long job do, line by line, for the user? | Log file (`.tra`) written by `ALOG` (V7+) or `OUVRE_TRACE`/`ECR_TRACE` (Classic) | below |
+| Which statement raised error N, in which script and line? | `Onerrgo` + `errn`, `errl`, `errp`, `errm`, `errmes$` | below, `language-basics.md` |
+| Which Gosub/Call/Read did the engine actually execute? | Engine log: `openlog(MODE)` in code, or the "Engine trace" administration page | below |
+| Where is the time spent? | `ASYRTIMING.START/STOP` profiler, timestamps | `performance.md` |
+| What is the value of X at line N? | Eclipse debugger (`dbgmode` + `Dbgaff`) | below |
+| What went in/out of an integration call? | Integration log table | `web-services-integration.md` |
+| Which fstat value means what? | fstat constants table | `database.md` |
 
-### Writing a trace line
+## V12 log files: the ALOG class
 
-```l4g
-Call ECRAN_TRACE("Starting YTRANSFER from=" - ACCOUNT1 - " to=" - ACCOUNT2 + " amt=" + num$(AMOUNT), 0) From GESECRAN
-```
+Sage's developer guide states that version 6 used the `OUVRE_TRACE`/`ECR_TRACE` sub-programs, and that V7+ code
+should instantiate the supervisor class `ALOG`, which writes the same `.tra` format but fits class/method code.
+All methods are called with `fmet`:
 
-Second argument = level (emphasis):
-
-| Level | Effect |
-|-------|--------|
-| `0` | Plain line |
-| `1` | Bold / header |
-| `2` | Warning / red |
-
-Use `0` for data, `1` for section separators, `2` for actual problems.
-
-### `ECR_TRACE` vs `ECRAN_TRACE`
-
-Both exist; both work. On most folders `ECR_TRACE` is a short alias. Use whichever your existing codebase uses to stay consistent — the skill uses `ECRAN_TRACE` throughout.
-
-### The `GESECRAN` host script
-
-`ECRAN_TRACE` (and `ECR_TRACE`) lives in the standard supervisor script **`GESECRAN`** — shipped with every X3 install and the conventional home for trace primitives across V6/V7/V12. If a `Call … From GESECRAN` fails with "script not found", you're either in a folder where the supervisor isn't linked (rare) or on an unusually stripped-down patch level. Standard folders always have it.
-
-## Conditional / gated traces
-
-Full production code shouldn't spam the trace. Pattern:
-
-```l4g
-If [V]YDEBUG
-    Call ECRAN_TRACE("DEBUG: state=" - num$([L]STATE), 0) From GESECRAN
-Endif
-```
-
-Set `[V]YDEBUG = 1` at the start of a test session, unset it afterward. Better: a parameter (`GESADP`) so ops can toggle it without code change.
-
-### Per-module debug flags
-
-For big systems, split:
+| Method | Purpose |
+|---|---|
+| `ABEGINLOG(TITLE)` | Start the log and set its title. Returns 0. |
+| `ASETNAME(FILE_NAME)` | Force the file name (default: `F` + the `[C]NUMIMP` counter). Returns `[V]CST_AERROR` if a name was already assigned. |
+| `AGETNAME()` | Return the file name (assigns the default one if needed). |
+| `APPENDLOG(FILENAME)` | Re-open an existing log to append lines (creates it if missing). |
+| `APUTLINE(TEXT, STAT)` | Write line(s); `TEXT` may be an array. `STAT` = `[V]CST_AWARNING`, `[V]CST_AERROR`, anything else = information. |
+| `APUTINSTERRS(INSTANCE)` | Dump the errors attached to a class instance (set by `ASETERROR`, see `v12-classes.md`). |
+| `APUTERRS(ERRINSTANCE)` | Dump an `AERROR` instance. |
+| `AFLUSHLOG()` | Flush buffered lines to disk (user parameter `NBTRABUFF` sets the buffer size). |
+| `AENDLOG()` | Write, close the file. Returns 0. |
 
 ```l4g
-If [V]YDEBUG_IMPORT : Call ECRAN_TRACE(...) : Endif
-If [V]YDEBUG_WS     : Call ECRAN_TRACE(...) : Endif
-```
-
-Noise cost = zero when disabled; you can enable only the subsystem you're investigating.
-
-## Writing to a log file
-
-When the trace isn't persistent enough (batch jobs, unattended processes):
-
-```l4g
-Subprog YLOG(MSG)
-Value Char MSG()
-
-Local Char PATH(200), LINE(2000)
-PATH = "TMP/ylog_" - num$(date$, "YYYYMMDD") - ".log"
-LINE = num$(date$, "J/M/A") - " " - time$ - " [" - [V]GUSER - "] " - MSG
-
-Openo PATH Using 9 Append
-If !fstat
-    Writeseq LINE Using 9
-    Close 9
-Endif
+##############################################################
+# YCHECKBAL - flag negative balances in YACCOUNT, return the log name (script YACCLIB)
+##############################################################
+Subprog YCHECKBAL(LOGNAME)
+Variable Char LOGNAME()
+Local File YACCOUNT [YACC]
+Local Instance YLOG Using C_ALOG
+Local Integer OK, NBNEG
+  YLOG = NewInstance C_ALOG AllocGroup Null
+  OK = fmet YLOG.ABEGINLOG("YCHECKBAL - contrôle des soldes")
+  LOGNAME = fmet YLOG.AGETNAME
+  OK = fmet YLOG.APUTLINE("User " + GACTX.USER - "folder " + GACTX.AFOLDER, [V]CST_AINFO)
+  For [YACC] Where Y_BALANCE < 0
+    NBNEG += 1
+    OK = fmet YLOG.APUTLINE("Solde négatif : " + [F:YACC]Y_ACCNUM, [V]CST_AWARNING)
+  Next
+  If NBNEG > 0
+    OK = fmet YLOG.APUTLINE(num$(NBNEG) - "account(s) in error", [V]CST_AERROR)
+  Endif
+  OK = fmet YLOG.AENDLOG
+  FreeGroup YLOG
 End
 ```
 
-One log per day per process keeps things manageable. Rotate on size when load gets heavy.
+Call `AFLUSHLOG` after an important error line if the process might die before `AENDLOG`, but not on every line
+(the guide warns about the performance cost). `GACTX.USER` / `GACTX.AFOLDER` come from the context instance
+(`this.ACTX` inside class code).
 
-## Persistent integration logs — a real table
+## Classic trace sub-programs
 
-For integrations, the trace window isn't enough (audit, support). Dedicated table:
+Still running in V12 (these are the V6 sub-programs). Host scripts are documented on Sage's
+AREADLOG page ("the `OUVRE_TRACE` subprogram of `LECFIC`", counters "incremented in the `GESECRAN` script",
+"terminated in `FERME_TRACE`"); the exact call forms and flag values below are community-reported (Greytrix,
+Sage Community Hub), except `OUVRE_TRACE(TITLE) From LECFIC` and `CLOSE_LOC From LECFIC`, which appear in Sage's
+silent-import sample (GES_AOE1).
 
-```l4g
-# YINTEGRATIONLOG — one row per inbound/outbound message
-Raz [F:YINTLOG]
-[F:YINTLOG]DAT = date$
-[F:YINTLOG]TIM = time$
-[F:YINTLOG]USR = [V]GUSER
-[F:YINTLOG]DIR = "IN"                    # or "OUT"
-[F:YINTLOG]ENDPOINT = URL
-[F:YINTLOG]REQUEST = left$(BODY, 2000)
-[F:YINTLOG]RESPONSE = left$(RESP, 2000)
-[F:YINTLOG]HTTP = HTTPCODE
-[F:YINTLOG]STATUS = STATUS               # "OK" / "ERR"
-Write [YINTLOG]
-```
-
-Queryable, filterable, export-able to CSV for post-mortems. See `web-services-integration.md`.
-
-## Supervisor-level tracing
-
-The X3 supervisor has a built-in tracing that captures *everything* L4G does. Enable it per session:
-
-- **Administration → Utilities → Verifications → X3 tracing** — start trace, pick your user, reproduce the issue, stop, download
-- Output lives in `<install>/tmp/` as a `.tra` file
-- Shows every function call, SQL query issued, and `fstat` value
-
-Use this when:
-- You can't figure out which `Read` returned `fstat <> 0`
-- You suspect the engine is rewriting your query
-- You want to count how many rows a `For` actually loops over
-
-Expensive — don't leave it on in production.
-
-## The error message / `[S]stat1`
-
-After an error, `[S]stat1` holds a numeric error code. Common values:
-
-| stat1 | Meaning |
-|-------|---------|
-| `0` | No error |
-| `2` | File not found |
-| `6` | Lock conflict |
-| `20` | Unique constraint violation |
-| `100` | EOF (sequential read) |
-| `250` | Timeout |
-
-The full mapping is in the supervisor docs — look it up rather than guessing.
-
-For the *string* explanation:
+| Call | Effect |
+|---|---|
+| `Call OUVRE_TRACE(TITLE) From LECFIC` | Open a new log file with a title line |
+| `Call ECR_TRACE(MSG, FLAG) From GESECRAN` | Write one line; `FLAG` 0 = normal (black), 1 = error (red), -1 = green, -2 = blue |
+| `Call FERME_TRACE From LECFIC` | Close the log |
+| `Call CLOSE_LOC From LECFIC` | Close the log — the form used by Sage's silent-import sample (GES_AOE1, after `IMPORTSIL`) |
+| `Call LEC_TRACE From LECFIC` | Display the log to an interactive user |
+| `Call SUPP_TRACE From LECFIC` | Delete the log |
 
 ```l4g
-Errbox "Err: " + num$([S]stat1) + " - " + [S]funfat
+# Classic-style trace (V6 sub-programs) - prefer ALOG in new V12 code
+Call OUVRE_TRACE("YRECALC - recalcul des soldes") From LECFIC
+Call ECR_TRACE("Début du traitement", 0) From GESECRAN
+Call ECR_TRACE("Compte YA001 : solde négatif", 1) From GESECRAN
+Call ECR_TRACE("Traitement terminé", -1) From GESECRAN
+Call FERME_TRACE From LECFIC
+Call LEC_TRACE From LECFIC : # interactive sessions only
 ```
 
-`[S]funfat` contains a supervisor-formatted error message.
+Lines written with flag 1 are counted as errors (the AREADLOG page mentions the `GERRTRACE` variable for the
+error count, and a pop-up announces the number of errors before the log is shown, community-reported).
+There is no `ECRAN_TRACE`: it does not exist.
 
-## Runtime introspection
+**Log already open?** Some entry points run with the standard's log open. ADC_TRTSYN.htm says the `GTRACE`
+variable must be tested: `GTRACE <> ""` means a log file is open, `GTRACE = ""` that none is. Write with
+`ECR_TRACE` only when `GTRACE <> ""`, and never close a log you did not open.
 
-Useful built-ins to dump state when debugging:
+**Gating verbose traces.** Do not comment code in and out. Define a parameter at **user** level (e.g. `YTRCLVL`)
+in GESADP and read it once with `fmet GACTX.APARAM.AGETUSERVALNUM("YTRCLVL")` (V12 context-parameter API).
 
-| Expression | What it gives you |
-|------------|-------------------|
-| `[S]curpos` | Current line number in the current script |
-| `[S]curnom` | Name of the current script |
-| `[S]curtrt` | Current `.trt` / `.src` being executed |
-| `[S]clalph` | Current alphabet (locale setting) |
-| `adxlog` | 1 if inside a transaction |
-| `[V]GUSER` | Current user code |
-| `[V]GLANGUE` | Current language code |
-| `nomap` | Current folder |
+## Reading log files: LECTRACE and AREADLOG
 
-Dump them at the top of a `$ERR_HANDLER` to get full context on every error:
+- Standard long-running and batch functions write their logs in the **TRA** sub-directory of the folder, named
+  `F<n>.tra` where `<n>` comes from the `[C]NUMIMP` counter (LECTRACE help). The first line holds a header, date,
+  time, user and comment; error lines are prefixed `>` or `<` with an error number.
+- **LECTRACE** ("Log reading") opens one file, pages through it (999 lines per page) and can filter error lines.
+- **AREADLOG** (recent V12 patch levels; the page gives no patch number) is the V7-style replacement: an `ALOG`
+  table/representation listing the TRA files with user, function, module, error and warning counts, plus an
+  "Archive logs" action that moves old files to `TRA_HIS`, and a recurring batch task `ALOG` to refresh/archive.
+- Batch request logs are `RQT<request number>` and the batch server log is `server.tra` in the TRA directory of
+  the runtime's SERVX3 directory (ASYRREQMAN help) — see `diagnostics-postmortem.md`.
+
+## Trapping runtime errors
+
+`Onerrgo LABEL` (or `Onerrgo LABEL From SCRIPT`) branches to a handler when the engine raises an error.
+Inside the handler only: `errn` (error number), `errl` (line), `errp` (script), `errm` (extra detail),
+`errmes$(N)` (text of error N in the connection language). Leave with `Resume` (continues after the failing
+statement; after the `Endif`/`Next`/`Wend` if it was inside a block) or `End`. `Onerrgo` alone cancels the routing.
+Language-level details: `language-basics.md`.
 
 ```l4g
-$ERR_HANDLER
-    Call ECRAN_TRACE("ERR stat1=" + num$([S]stat1) - " script=" - [S]curnom -
-                     " line=" + num$([S]curpos) - " user=" - [V]GUSER, 2) From GESECRAN
-End
+Funprog YRATIO(NUM, DEN, ERRMSG)
+Value Decimal NUM, DEN
+Variable Char ERRMSG()
+Local Decimal RES
+  ERRMSG = ""
+  Onerrgo YRATIO_ERR
+  RES = NUM / DEN
+  Onerrgo
+End RES
+
+$YRATIO_ERR
+  ERRMSG = "Erreur" - num$(errn) - errmes$(errn) - "ligne" - num$(errl) - "script" - errp - errm
+  RES = 0
+Resume
 ```
 
-## `funfat` — function fatality info
+Rules from the Onerrgo page that bite in debugging sessions:
+- An error raised inside the handler is **not** re-routed (to avoid loops): it behaves like an untrapped error.
+- A handler cannot `Commit`/`Rollback` a transaction opened by the failing code; if it reaches `End`, the engine
+  rolls the transaction back automatically.
+- If a called sub-program has no `Onerrgo`, its error surfaces in the caller's handler as if raised on the `Call` line.
 
-When a function returns an error, `[S]funfat` is the engine's last-message buffer. It's cleared on each call, so read it **immediately** after the failing operation.
+## Engine log: openlog, Engine trace, X3 session logs
+
+**From code.** `ST = openlog(MODE)` puts the engine in log mode; the file goes to the `TMP` sub-folder of the
+directory given by `ADXDIR`. `ST = closelog()` stops it, `getlogname()` returns the last file name. Status 0 = OK.
+
+| MODE bit | Logged |
+|---|---|
+| 1 | `Gosub` and `Call` stack |
+| 2 | Every instruction |
+| 4 | `Read` and `For` database requests |
+| 8 | All sadxxx (database driver) requests |
+| 16 | JSON exchanges |
+| 32 | Classic mode exchanges |
+| 64 | sadldap exchanges |
+| 128 | opadxd exchanges |
 
 ```l4g
-Call OUVRE_TRT("GESBPC", ...) From GESAUT
-If [S]stat1
-    Errbox "Open failed: " - [S]funfat
-Endif
+Local Integer ST
+Local Char YLOGNAME(250), YENGINELOG(250)
+ST = openlog(1 + 4) : # call stack + Read/For requests
+Call YCHECKBAL(YLOGNAME) From YACCLIB
+ST = closelog()
+YENGINELOG = getlogname()
 ```
 
-## Remote debugging — the X3 debugger
+**From the administration pages (no code change).**
+- *Engine trace* page: "Enable logging" + a **Flag** that sums 1 (Gosub/Call/Callmet/Fmet), 2 (all instructions),
+  4 (Read/For), 8 (engine ↔ database driver), 16 (client JSON), 32 (Classic binary), 64 (LDAP), 128 (Opldap),
+  256 (runtime start); a log directory relative to the folder (must be allowed by the sandbox) and the endpoint.
+  "Activate X3 log" is global to every session started afterwards — CPU, memory and disk cost; keep it short.
+- *X3 session logs* page: targeted logs of type Batch administration, Batch query (user/task), Web service
+  (endpoint, SOAP pool, user), Representation, or Function (classic page); `MaxLogTime` auto-stops the log; files land
+  in the runtime's `logs` directory; an enabled log must be stopped before it can be edited.
+- *Sessions information* page: "Activate session trace" per web session (levels Error, Warning, Info, Debug, Silly)
+  — this traces the Syracuse side, written to the Syracuse `logs` folder.
 
-The X3 editor (Safe X3 or the dedicated Classic editor) ships an interactive debugger:
+## Interactive debugger (Eclipse)
 
-- Set breakpoints on any line of a `.src` / `.trt`
-- Step over / into / out of `Call` and `Gosub`
-- Inspect `[L]`, `[V]`, `[F:...]`, `[M:...]` values live
-- Evaluate expressions in the current frame
-
-For V12 / Syracuse:
-
-1. Connect the debugger to the Syracuse runtime (port in the instance config).
-2. Attach to your session via user code.
-3. Trigger the action that runs your script.
-
-The debugger is overkill for simple cases but invaluable when a `For` loop behaves unexpectedly or a `Link` silently fails.
-
-## Strategies for common bug patterns
-
-### "The record doesn't come back, but there's no error"
-
-- Did you check `fstat` **immediately** after the `Read`? Any statement in between can reset it.
-- Did you use the right **index name**? `Read [BPC]BPCNUM0 = ...` — `BPCNUM0` is the index, `BPCNUM` is the field.
-- Is your `Where` clause pushed to SQL or filtered client-side? Wrap `pat` with `<> 0` (see `builtin-functions.md`).
-
-### "The transaction didn't commit / it was partially written"
-
-- Every `Write`/`Update`/`Delete`/`Rewrite` must be followed by `If fstat : Rollback : End : Endif`.
-- Nested transactions: use the `If adxlog` idiom — otherwise your inner `Rollback` undoes the whole outer transaction.
-- A `Goto` out of a `Trbegin` block without reaching `Commit`/`Rollback` leaves locks hanging until session end.
-
-### "The grid shows the wrong rows"
-
-- Did you `Raz [M:GRIDNAME]` before repopulating?
-- Did you set `[M:GRID]NBLIG` to the real row count?
-- Are you writing to `[M:...]` (mask buffer) or `[F:...]` (record buffer) by mistake? See `screens-and-masks.md`.
-
-### "The action works in dev but fails in production"
-
-- Different **folder** = different data, different dictionary, different patches. Run with `nomap` dumped in the trace.
-- Different **user role** = different ACL, parameters, workflows.
-- Different **patch level** — check `GESADP` for the supervisor version.
-
-### "It runs the first time, then fails"
-
-- Residual `[F:...]` buffer from a prior read polluting the next `Write`. Always `Raz [F:...]` before `Write`.
-- Lock leaked from a prior failed transaction. Check session state in the X3 monitor.
-- Cached compiled `.adx` — force a recompile (the supervisor only recompiles when the mtime changes; cloning a file in-place doesn't always bump it).
-
-## Performance debugging
-
-### Find the hot path
-
-Inject timings:
+The V12 debugger is the Eclipse-based workbench. In code, `dbgmode` must be non-zero, then `Dbgaff` hands control
+to the Eclipse debugger (inspect variables, step, breakpoints):
 
 ```l4g
-Local Integer T0, T1
-T0 = [S]adxchr                           # current clock in hundredths of seconds
-...
-T1 = [S]adxchr
-Call ECRAN_TRACE("Step took " + num$(T1 - T0) + " cs", 0) From GESECRAN
+# Temporary breakpoint - never commit this to a patch
+dbgmode = 1
+Dbgaff
 ```
 
-### SQL-level investigation
+Set-up (community-reported, Sage Community Hub): on the X3 user (GESAUS), parameter chapter Supervisor, group DEV,
+set `AECLIDBG` = Yes, `AECLIDBGTR` = Yes, `AECLIMAC` = web server name, `AECLIPRT` = port, `AECLIPSE` = Yes; in
+Eclipse open the Debug perspective, "Attach process", pick your session, then set breakpoints by double-clicking the
+gutter. Sage's security guide lists the Node "debug proxy" port 9514 as **development environments only**; a
+"Debugger not active" error usually means that port is blocked (community-reported).
+The X3 Builder Studio VS Code extension manages X3 Builder projects; it is not a 4GL debugger.
 
-Turn on SQL tracing at the database layer (Oracle SQL trace, SQL Server profiler) for the session — reveals whether a `For` uses an index, does a table scan, or N+1 via `Link`.
+## System variables worth dumping
 
-Common culprits:
-- `pat(FIELD, "...")` without `<> 0` → full table scan
-- `For [TBL] Where ...` with a non-indexed filter → full table scan
-- `Link [B] With [F:A]X = [F:B]Y` inside a `For` over A → N+1 queries
-
-Fix pattern: preload via a single set-based query, or add an index.
+| Variable / function | Meaning (glossary) |
+|---|---|
+| `nomap` | Current folder name(s) — use it instead of a hard-coded folder |
+| `GACTX.USER`, `GACTX.AFOLDER`, `GACTX.LOGIN` | Context: user code, folder, login (`this.ACTX` in classes) |
+| `adxlog` | 1 when a transaction is open |
+| `fstat` | Status of the last DB / sequential-file / Lock operation |
+| `adxuprec`, `adxdlrec`, `adxsqlrec` | Rows touched by the last `Update`, `Delete`, `Execsql` |
+| `[S]stat1` | Number of lines returned by the last `System` instruction (negative = shell failure) — **not** a DB error code |
+| `adxuid(1)` | Unique id of the connection on the instance (the UID column of VERSYMB locked symbols) |
+| `errn`, `errl`, `errp`, `errm` | Only meaningful inside an `Onerrgo` handler |
 
 ## Gotchas
 
-- **Traces disabled in production.** `ECRAN_TRACE` is sometimes silenced by a parameter in hardened installs — `Errbox` isn't, but spams users. Use a log table instead.
-- **`stat1` gets reset fast.** Any subsequent supervisor call clears it; copy to a `[L]` immediately.
-- **`System` exit codes.** `System "cmd"` sets `stat1` to the shell's exit code; 0 = success, non-zero = whatever the command returned. Don't confuse with X3 error codes.
-- **Trace file rollover.** Long sessions produce huge traces; the supervisor may truncate at a size limit, losing the middle. Capture the reproduction early.
-- **Debugger and transactions.** Breaking inside a `Trbegin` block leaves locks held. Release them (kill the session) or other users block.
-- **Log injection.** If your log message contains user input, sanitize — unescaped newlines let an attacker forge log lines. `replace$(MSG, chr$(10), " ")` is the minimum.
+- `fstat` is overwritten by the next DB/file statement: copy it to a local before writing a trace line.
+- `stat1` is not an error channel and there is no `funfat` variable: use `fstat` for DB, `errn` for runtime errors.
+- Always pair `OUVRE_TRACE` with `FERME_TRACE` (Sage's import sample uses `CLOSE_LOC`), and `ABEGINLOG` with
+  `AENDLOG`, including on error paths.
+- Interactive display (`LEC_TRACE`, `Errbox`, `Infbox`) has no user to show to in batch and web services — write a log.
+- Leaving `Dbgaff` in delivered code hands user sessions to a debugger (or raises "Debugger not active",
+  community-reported); grep for it before building a patch.
+- Engine logs (`openlog`, Engine trace) grow fast; enable them for one reproduction, then switch off.
+- Never write secrets or full personal data into traces: TRA files can be opened by any user authorised on
+  LECTRACE / AREADLOG.
+
+See also: `diagnostics-postmortem.md`, `performance.md`, `language-basics.md`, `database.md`,
+`web-services-integration.md`, `v12-classes.md`, `unit-testing-axunit.md`.
+
+## Sources
+- https://online-help.sagex3.com/erp/12/en-us/Content/V7DEV/developer-guide_managing-log-files.html
+- https://online-help.sagex3.com/erp/12/en-us/Content/V7DEV/administration-reference_supervisor-administration-log-file-management.html
+- https://online-help.sagex3.com/erp/12/en-us/Content/FCT/LECTRACE.htm
+- https://online-help.sagex3.com/erp/12/en-us/Content/FCT/GES_AOE1.htm (OUVRE_TRACE / CLOSE_LOC in the silent-import sample)
+- https://online-help.sagex3.com/erp/12/en-us/Content/OBJ/ADC_TRTSYN.htm (GTRACE)
+- https://online-help.sagex3.com/erp/12/en-us/Content/FCT/ASYRREQMAN.htm
+- https://online-help.sagex3.com/erp/12/en-us/Content/V7DEV/4gl_onerrgo.html (and 4gl_errn, 4gl_errl, 4gl_errp, 4gl_errm, 4gl_errmes$, 4gl_resume)
+- https://online-help.sagex3.com/erp/12/en-us/Content/V7DEV/4gl_openlog.html (and 4gl_closelog, 4gl_getlogname)
+- https://online-help.sagex3.com/erp/12/en-us/Content/V7DEV/administration-reference_x3-session-configuration.html
+- https://online-help.sagex3.com/erp/12/en-us/Content/V7DEV/administration-reference_x3-session-logs.html
+- https://online-help.sagex3.com/erp/12/en-us/Content/V7DEV/administration-reference_sessions-information.html
+- https://online-help.sagex3.com/erp/12/en-us/Content/V7DEV/4gl_dbgmode.html , …/4gl_dbgaff.html
+- https://online-help.sagex3.com/erp/12/en-us/Content/V7DEV/getting-started_security-best-practices.html
+- https://online-help.sagex3.com/erp/12/en-us/Content/V7DEV/developer-guide_context-parameters.html
+- https://online-help.sagex3.com/erp/12/en-us/Content/V7DEV/how-to_how-to-get-information-relating-to-the-current-context.html
+- https://online-help.sagex3.com/erp/12/en-us/Content/V7DEV/4gl_stat1.html , …/4gl_nomap.html , …/4gl_fstat.html , …/4gl_adxuid.html
+- https://greytrix.com/blogs/sagex3/2024/02/27/how-to-customize-the-trace-log-file-for-errors-and-success-messages (community)
+- https://communityhub.sage.com/us/sage_x3/f/general-discussion/104603/display-a-trace-file (community)
+- https://communityhub.sage.com/sage-global-solutions/sage_x3/b/sage-x3-support-insights-ame/posts/how-to-set-up-safe-x3-studio-for-eclipse-for-debugging (community)
+- https://communityhub.sage.com/us/sage_x3/f/announcements/257592/now-available-new-sage-x3-builder-developer-studio-vscode-extension-1-0-3 (community)
