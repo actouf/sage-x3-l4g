@@ -1,6 +1,6 @@
 ---
 type: regex
-pattern: '(^|:)\s*(Readseq|Writeseq)\b'
+pattern: '^\s*Trbegin\b'
 flags: im
 match: not_contains
 ---
