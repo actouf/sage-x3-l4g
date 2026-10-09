@@ -82,7 +82,7 @@ these in code is a blocker; replace it with the real equivalent.
 | `IMPRIM`, `IMPRIM0 From GIMP` | `Call ETAT(...) From AIMP3` (argument list community-reported) | `reports-printing.md` |
 | `LECFIC From IMPOBJ`, `EXPFIC`, `LANCEXP` | `Call IMPORTSIL(TEMPLATE, FILE) From GIMPOBJ`; `AOWSEXPORT` | `imports-exports.md` |
 | `AFNC.JSONGET`, `AFNC.JSONSET`, `AFNC.XMLGET`, `ASYSTEM.ParseJson` | `ParseInstance` + `Select$` / `Contains$` | `web-services-rest-client.md` |
-| `AFNC.PARAMG(...)`, `GDEV.DEVISE`, `FORMAT_ADDR` | `fmet GACTX.APARAM.AGETVALNUM(LEVEL, KEY, PARAM)` and sibling getters; currency cache | `localization-formats.md`, `database.md` |
+| `AFNC.PARAMG(...)`, `GDEV.DEVISE`, `FORMAT_ADDR` | `fmet GACTX.APARAM.AGETVALNUM(LEVEL, KEY, PARAM)` and sibling getters (Classic: `Call PARAM(...) From ADOVAL`); currency cache | `data-dictionary.md`, `localization-formats.md` |
 | `NUMERO ... From GESNUM` | `func ANM_TOOL.NUMERO(ACTX, COUNTER, FCY, DAT, COMP, VAL, ERRMS)` inside a transaction; counters defined in GESANM (GESACM is the supervisor `[C]` counters) | `audit-compliance.md`, `function-codes.md` |
 | `#Active ... #End`, `$ACT = ... $FIN` | Activity codes on dictionary elements (no conditional compilation) | `conventions-and-naming.md` |
 | Index names `BPCNUM0`, `ITMREF0`, `SOHNUM0`; abbreviation `[GACC]` | `BPC0`, `ITM0`, `SOH0`; `[GAC]` | `conventions-and-naming.md` |
@@ -154,7 +154,7 @@ these in code is a blocker; replace it with the real equivalent.
 - Entry points and batch actions run inside standard programs: a `Local` in their label can clash
   with the standard's own variables.
 
-See also: `common-patterns.md`, `common-patterns-v12.md`, `version-caveats.md`, `database.md`,
+See also: `development-workflow.md`, `common-patterns.md`, `common-patterns-v12.md`, `version-caveats.md`, `database.md`,
 `performance.md`, `security-permissions.md`, `unit-testing-axunit.md`.
 
 ## Sources

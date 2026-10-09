@@ -93,7 +93,9 @@ provides the error text in `GMESSAGE`. In Classic objects, `GPE = 1` also means 
 - Variable names in the translated help pages can be translated too (the French and English pages of
   `SUBITM` ITMNUM name the reference variable "Numéro" / "Number"): confirm names in the source.
 - Entry points can disappear when Sage rewrites a process (community-reported: `MODTRTEXP` is no
-  longer called in `SUBEXPOBJ` after the V12 import/export changes). Recheck after each upgrade.
+  longer called in `SUBEXPOBJ` after the V12 import/export changes; it moved to the `AEXPPROCESS`
+  process, where the GESAPE line must be re-declared). Recheck after each upgrade.
+- Automatic journals have their own entry points (`CPTAUTO`, `SUBGAU`): `accounting-automatic-journals.md`.
 
 ## Context and transactions
 
@@ -138,7 +140,7 @@ Return
 Funprog Y_LOCKED(USR)
 Value Char USR()
 Local File YUSRLOCK [YUL]
-  Read [YUL]YUL0 = USR
+  Read [YUL]YUL0 = [L]USR
   If fstat = 0
     End 1
   Endif

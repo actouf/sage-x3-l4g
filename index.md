@@ -15,11 +15,12 @@ This site renders the same Markdown that ships in the skill. For installation, s
 
 ## Core language
 
-- [`language-basics.md`](plugins/sage-x3-l4g/references/language-basics.md) — types, declarations, parameter modes, control flow, `Break`, subprograms, `Gosub`, `Onerrgo` / `Resume`
+- [`language-basics.md`](plugins/sage-x3-l4g/references/language-basics.md) — types, declarations, arrays and `Sorta`, parameter modes, control flow, `Break`, subprograms, `Gosub`, `Onerrgo` / `Resume`
 - [`database.md`](plugins/sage-x3-l4g/references/database.md) — `Read` / `For` / `Filter` / `Link`, `Update … With`, `Readlock`, `Rewritebykey` and UPDTICK, `Execsql`, fstat / adxuprec, the transaction idiom
 - [`builtin-functions.md`](plugins/sage-x3-l4g/references/builtin-functions.md) — string, date, number and system functions (`format$`, `gdat$`, `instr`, `vireblc`, `ctrans`, `pat`, `filinfo`, `System`)
 - [`sequential-files.md`](plugins/sage-x3-l4g/references/sequential-files.md) — `Openi` / `Openo` / `Openio`, `Rdseq` / `Wrseq` / `Getseq` / `Putseq`, `Iomode`, encodings, `filpath`
-- [`conventions-and-naming.md`](plugins/sage-x3-l4g/references/conventions-and-naming.md) — X / Y / Z prefixes, activity codes, message chapters, script and table naming
+- [`data-dictionary.md`](plugins/sage-x3-l4g/references/data-dictionary.md) — tables (GESATB), a field on a standard table, indexes, validation, data types (GESATY), local menus (TXT), miscellaneous tables, SQL views (GESAVW), general parameters and reading them in L4G
+- [`conventions-and-naming.md`](plugins/sage-x3-l4g/references/conventions-and-naming.md) — X / Y / Z prefixes, activity codes, message chapters, script and table naming, standard table abbreviations and primary indexes
 - [`function-codes.md`](plugins/sage-x3-l4g/references/function-codes.md) — verified list of GESxxx functions, and codes that do not exist
 
 ## Object models and UI
@@ -33,7 +34,7 @@ This site renders the same Markdown that ships in the skill. For installation, s
 
 ## Integration
 
-- [`web-services-integration.md`](plugins/sage-x3-l4g/references/web-services-integration.md) — router: REST vs SOAP vs outgoing HTTP vs files, integration log, publishing checklist
+- [`web-services-integration.md`](plugins/sage-x3-l4g/references/web-services-integration.md) — router: REST vs SOAP vs outgoing HTTP vs files vs the X3 Services GraphQL API, integration log, publishing checklist
 - [`web-services-rest.md`](plugins/sage-x3-l4g/references/web-services-rest.md) — exposing X3 through Syracuse REST (`/api1/...`, representations, facets, paging, authentication)
 - [`web-services-rest-client.md`](plugins/sage-x3-l4g/references/web-services-rest-client.md) — calling external HTTP / REST APIs (`ASYRRESTCLI.EXEC_REST_WS`), JSON with `ParseInstance`
 - [`web-services-soap.md`](plugins/sage-x3-l4g/references/web-services-soap.md) — publishing Classic SOAP web services (GESASU, GESAWE, Syracuse pools, callContext)
@@ -41,25 +42,27 @@ This site renders the same Markdown that ships in the skill. For installation, s
 - [`imports-exports.md`](plugins/sage-x3-l4g/references/imports-exports.md) — import / export templates (GESAOE), running them from code, file exchange patterns
 - [`reports-printing.md`](plugins/sage-x3-l4g/references/reports-printing.md) — reports dictionary, destinations, printing from code
 - [`workflow-email.md`](plugins/sage-x3-l4g/references/workflow-email.md) — workflow rules (GESAWA), allocation rules, data models, sending e-mail (`ASEND_MAIL`)
+- [`accounting-automatic-journals.md`](plugins/sage-x3-l4g/references/accounting-automatic-journals.md) — automatic journals (GESGAU), formulas, link / journal subprograms, CPTAUTO entry points, accounting entry tables
 
 ## Operations
 
-- [`batch-scheduling.md`](plugins/sage-x3-l4g/references/batch-scheduling.md) — batch tasks (GESABT), recurring tasks (GESABA), calendars, request monitoring, restart safety
+- [`development-workflow.md`](plugins/sage-x3-l4g/references/development-workflow.md) — where scripts live, script dictionary (GESADC), Safe X3 Studio (Eclipse), compiling, the write → compile → fix → test → patch loop
+- [`batch-scheduling.md`](plugins/sage-x3-l4g/references/batch-scheduling.md) — batch tasks (GESABT), recurring tasks (GESABA), calendars, request monitoring, restart safety, single-instance guard with `Lock`
 - [`personalisation-activity.md`](plugins/sage-x3-l4g/references/personalisation-activity.md) — activity codes (GESACV), folder hierarchy, patches (APATCH / PATCH), personalisation
 - [`localization.md`](plugins/sage-x3-l4g/references/localization.md) — messages and `mess()`, connection language, date and number formatting
 - [`localization-formats.md`](plugins/sage-x3-l4g/references/localization-formats.md) — currencies, countries and address formats, character sets
 - [`data-migration.md`](plugins/sage-x3-l4g/references/data-migration.md) — staging tables, idempotent loaders, reconciliation, cutover
-- [`debugging-traces.md`](plugins/sage-x3-l4g/references/debugging-traces.md) — log files (`ALOG` class in V7+ code, `OUVRE_TRACE` / `ECR_TRACE` in Classic code), engine log, profiler, error variables, debugger
+- [`debugging-traces.md`](plugins/sage-x3-l4g/references/debugging-traces.md) — log files (`ALOG` class in V7+ code, `OUVRE_TRACE` / `ECR_TRACE` in Classic code), engine log, error variables, debugger
 - [`diagnostics-postmortem.md`](plugins/sage-x3-l4g/references/diagnostics-postmortem.md) — production incidents: locks, failed batches, logs, incident report template
 
 ## Quality
 
-- [`performance.md`](plugins/sage-x3-l4g/references/performance.md) — index-driven access, `Link` vs N+1 reads, `Columns`, transaction size, set-based SQL
+- [`performance.md`](plugins/sage-x3-l4g/references/performance.md) — profiler (`ASYRTIMING`), index-driven access, `Link` vs N+1 reads, `Columns`, transaction size, set-based SQL
 - [`security-permissions.md`](plugins/sage-x3-l4g/references/security-permissions.md) — function profiles, access control, web-service authentication, secrets, injection
 - [`audit-compliance.md`](plugins/sage-x3-l4g/references/audit-compliance.md) — audit table pattern, sequence numbers, GDPR access / erasure / portability, retention
 - [`unit-testing-axunit.md`](plugins/sage-x3-l4g/references/unit-testing-axunit.md) — AXUNIT test suites (`QLF*` scripts), assertions, running tests
 - [`code-review-checklist.md`](plugins/sage-x3-l4g/references/code-review-checklist.md) — structured review pass, red flags ranked by blast radius
-- [`common-patterns.md`](plugins/sage-x3-l4g/references/common-patterns.md) — Classic / core recipes
+- [`common-patterns.md`](plugins/sage-x3-l4g/references/common-patterns.md) — Classic / core recipes and an index of where each recipe lives
 - [`common-patterns-v12.md`](plugins/sage-x3-l4g/references/common-patterns-v12.md) — V12 recipes
 - [`version-caveats.md`](plugins/sage-x3-l4g/references/version-caveats.md) — version-dependent behaviour and what to verify on your folder
 

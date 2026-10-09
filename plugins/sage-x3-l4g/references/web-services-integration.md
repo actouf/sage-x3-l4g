@@ -20,11 +20,19 @@ cross-cutting gotchas, and the go-live checklist.
 | Out | Call an external JSON/REST API | `func ASYRRESTCLI.EXEC_REST_WS` / `EXEC_REST_WSCLB` + Syracuse "Outgoing REST web services" record | `web-services-rest-client.md` |
 | Out | Call an external SOAP/XML service | `func ASYRWEBSER.EXEC_HTTP` with a hand-built envelope (no dedicated SOAP client is documented) | `web-services-soap-client.md` |
 | Both | Batch files | Import/export templates, sequential files (on-premise only) | `imports-exports.md`, `sequential-files.md` |
+| In | GraphQL API of Sage X3 Services | Nodes and packages declared in the dictionary; custom code in TypeScript, not 4GL | Below |
 
 Sage's own rule (Web services overview): the Web API can read data from all modules; updates go through
 the Web API for modules rebuilt on classes/representations; SOAP serves modules still on the Classic
 interface and supports read and update. Sage X3 Online accepts only OAuth2 for web services and does
 not allow file-based integration.
+
+**Sage X3 Services (GraphQL).** A separate component (Sage X3 2021 R2 or later, Windows Server 2019 or
+2022 only, required by Mobile Automation) that serves a GraphQL schema built from API nodes. Packages
+(GESAPACK) "structure the nodes dictionary and the GraphQL schema"; node bindings (GESANODEB) map nodes to
+X3 data models, scripts, imports, windows or views, and a node whose binding is not published "is hidden
+in the GraphQL schema". Specific activity codes (X, Y, Z) must be linked to a package. Computed properties
+take TypeScript written in the Sage X3 Services development environment: this skill covers 4GL only.
 
 ## The integration log table
 
@@ -114,7 +122,7 @@ Purge old rows with a scheduled task (`batch-scheduling.md`); retention rules li
    before acting (idempotency).
 7. Tested outside X3 first (Postman / SoapUI), then from X3.
 
-See also: `debugging-traces.md`, `security-permissions.md`, `database.md`.
+See also: `debugging-traces.md`, `security-permissions.md`, `database.md`, `development-workflow.md`.
 
 ## Sources
 - https://online-help.sagex3.com/erp/12/en-us/Content/V7DEV/integration-guide_ws-overview.html
@@ -130,3 +138,6 @@ See also: `debugging-traces.md`, `security-permissions.md`, `database.md`.
 - https://online-help.sagex3.com/erp/12/en-us/Content/V7DEV/4gl_uniqid.html
 - https://online-help.sagex3.com/erp/12/en-us/Content/V7DEV/4gl_datetime$.html
 - https://online-help.sagex3.com/erp/11/en-US/V7DEV/how-to_how-to-get-information-relating-to-the-current-context.html
+- https://online-help.sagex3.com/erp/12/en-us/Content/V7DEV/getting-started_Sage-X3-Services-installation.html
+- https://online-help.sagex3.com/erp/12/en-us/Content/FCT/GESAPACK.htm
+- https://online-help.sagex3.com/erp/12/en-us/Content/FCT/GESANODEB.htm

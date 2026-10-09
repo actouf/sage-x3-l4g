@@ -10,7 +10,7 @@
 #   - File name must match QLF*_*.src so that AXUNIT finds it (RUN_SET / RUN_ALL)
 #
 # References
-#   unit-testing-axunit.md  "Full example: testing YTRANSFER" (same code)
+#   unit-testing-axunit.md  "Full example: testing YTRANSFER" (excerpt and design notes)
 #   database.md             YTRANSFER and the adxlog transaction idiom
 ##############################################################
 Funprog TESTSUITE()
@@ -27,14 +27,14 @@ End
 
 Subprog TEARDOWN
 Local Integer YNB
-  YNB = func YCLEAN_ACCOUNTS()
+  [L]YNB = func YCLEAN_ACCOUNTS()
 End
 
 Subprog YTC_TRANSFER_OK
 Local Integer STA
   Call YRESET_ACCOUNTS
-  STA = func YACCLIB.YTRANSFER("YTST1", "YTST2", 30)
-  Call CHECK_EQUAL(STA, [V]CST_AOK) From AXUNIT
+  [L]STA = func YACCLIB.YTRANSFER("YTST1", "YTST2", 30)
+  Call CHECK_EQUAL([L]STA, [V]CST_AOK) From AXUNIT
   Call CHECK_EQUAL(func YBALANCE("YTST1"), 70) From AXUNIT
   Call CHECK_EQUAL(func YBALANCE("YTST2"), 30) From AXUNIT
 End
@@ -42,8 +42,8 @@ End
 Subprog YTC_INSUFFICIENT
 Local Integer STA
   Call YRESET_ACCOUNTS
-  STA = func YACCLIB.YTRANSFER("YTST1", "YTST2", 500)
-  Call CHECK_EQUAL(STA, [V]CST_AERROR) From AXUNIT
+  [L]STA = func YACCLIB.YTRANSFER("YTST1", "YTST2", 500)
+  Call CHECK_EQUAL([L]STA, [V]CST_AERROR) From AXUNIT
   Call CHECK_EQUAL(func YBALANCE("YTST1"), 100) From AXUNIT
   Call CHECK_EQUAL(func YBALANCE("YTST2"), 0) From AXUNIT
 End
@@ -51,8 +51,8 @@ End
 Subprog YTC_UNKNOWN_ACCOUNT
 Local Integer STA
   Call YRESET_ACCOUNTS
-  STA = func YACCLIB.YTRANSFER("YTST1", "YTSTX", 30)
-  Call CHECK_EQUAL(STA, [V]CST_AERROR) From AXUNIT
+  [L]STA = func YACCLIB.YTRANSFER("YTST1", "YTSTX", 30)
+  Call CHECK_EQUAL([L]STA, [V]CST_AERROR) From AXUNIT
   Call LOG_LINE("The debit of YTST1 must have been rolled back") From AXUNIT
   Call CHECK_EQUAL(func YBALANCE("YTST1"), 100) From AXUNIT
   Call CHECK_EQUAL(adxlog, 0) From AXUNIT
@@ -62,9 +62,10 @@ Subprog YTC_CALLER_TRANSACTION
 Local File YACCOUNT [YACC]
 Local Integer STA
   Call YRESET_ACCOUNTS
+  # This case plays the caller that owns the transaction (the suite runs with adxlog = 0)
   Trbegin [YACC]
-  STA = func YACCLIB.YTRANSFER("YTST1", "YTST2", 30)
-  Call CHECK_EQUAL(STA, [V]CST_AOK) From AXUNIT
+  [L]STA = func YACCLIB.YTRANSFER("YTST1", "YTST2", 30)
+  Call CHECK_EQUAL([L]STA, [V]CST_AOK) From AXUNIT
   Call CHECK_EQUAL(adxlog, 1) From AXUNIT : # YTRANSFER must not commit our transaction
   Rollback
   Call CHECK_EQUAL(func YBALANCE("YTST1"), 100) From AXUNIT
@@ -74,44 +75,48 @@ End
 # ---------- helpers ----------
 Subprog YRESET_ACCOUNTS
 Local Integer YNB, STA
-  YNB = func YCLEAN_ACCOUNTS()
-  STA = func YCREATE_ACCOUNT("YTST1", 100)
-  STA = func YCREATE_ACCOUNT("YTST2", 0)
+  [L]YNB = func YCLEAN_ACCOUNTS()
+  [L]STA = func YCREATE_ACCOUNT("YTST1", 100)
+  [L]STA = func YCREATE_ACCOUNT("YTST2", 0)
 End
 
 Funprog YCREATE_ACCOUNT(YCODE, YBAL)
 Value Char YCODE()
 Value Decimal YBAL
 Local File YACCOUNT [YACC]
-  Trbegin [YACC]
+Local Shortint TRANS_OPEN
+  [L]TRANS_OPEN = adxlog
+  If [L]TRANS_OPEN = 0 : Trbegin [YACC] : Endif
   Raz [F:YACC]
-  [F:YACC]Y_ACCNUM = YCODE
-  [F:YACC]Y_BALANCE = YBAL
+  [F:YACC]Y_ACCNUM = [L]YCODE
+  [F:YACC]Y_BALANCE = [L]YBAL
   Write [YACC]
   If fstat
-    Rollback
+    If [L]TRANS_OPEN = 0 and adxlog = 1 : Rollback : Endif
     End [V]CST_AERROR
   Endif
-  Commit
+  If [L]TRANS_OPEN = 0 : Commit : Endif
 End [V]CST_AOK
 
 Funprog YCLEAN_ACCOUNTS()
 Local File YACCOUNT [YACC]
 Local Integer YNB
-  Trbegin [YACC]
+Local Shortint TRANS_OPEN
+  [L]TRANS_OPEN = adxlog
+  If [L]TRANS_OPEN = 0 : Trbegin [YACC] : Endif
   Delete [YACC] Where pat(Y_ACCNUM, "YTST*") <> 0
   If fstat
-    Rollback
+    If [L]TRANS_OPEN = 0 and adxlog = 1 : Rollback : Endif
     End -1
   Endif
-  YNB = adxdlrec
-  Commit
-End YNB
+  [L]YNB = adxdlrec
+  If [L]TRANS_OPEN = 0 : Commit : Endif
+End [L]YNB
 
 Funprog YBALANCE(YCODE)
 Value Char YCODE()
 Local File YACCOUNT [YACC]
-  Read [YACC]YAC0 = YCODE
+  Read [YACC]YAC0 = [L]YCODE
   If fstat
     End -1
   Endif

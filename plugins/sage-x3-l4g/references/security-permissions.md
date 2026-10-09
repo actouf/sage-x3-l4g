@@ -117,22 +117,22 @@ Funprog YSQL_QUOTE(TXT)
 Value Char TXT()
 Local Char RES(255)
 Local Integer I
-  For I = 1 To len(TXT)
-    If mid$(TXT, I, 1) = "'"
-      RES += "''"
+  For [L]I = 1 To len([L]TXT)
+    If mid$([L]TXT, [L]I, 1) = "'"
+      [L]RES += "''"
     Else
-      RES += mid$(TXT, I, 1)
+      [L]RES += mid$([L]TXT, [L]I, 1)
     Endif
   Next I
-End "'" + RES + "'"
+End "'" + [L]RES + "'"
 ```
 
 **JSON.** Build values with `escjson` (escapes `"`, `\` and control characters U+0000-U+001F):
 
 ```l4g
 Local Char YNAME(80), YJSON(250)
-YNAME = 'Dupont "Le Grand"'
-YJSON = '{"name":"' + escjson(YNAME) + '"}'
+[L]YNAME = 'Dupont "Le Grand"'
+[L]YJSON = '{"name":"' + escjson([L]YNAME) + '"}'
 ```
 
 **XML.** Escape `&` first, then `<`, `>`, `"`, `'` — helper and SOAP envelopes in `web-services-soap-client.md`.
@@ -161,8 +161,8 @@ From Sage's security best practices:
 ```l4g
 # YALLOWPURGE: specific integer parameter declared in GESADP at folder level, 1 = allowed
 Local Integer YALLOW
-YALLOW = fmet GACTX.APARAM.AGETVALNUM([V]CST_ALEVFOLD, "", "YALLOWPURGE")
-If YALLOW <> 1
+[L]YALLOW = fmet GACTX.APARAM.AGETVALNUM([V]CST_ALEVFOLD, "", "YALLOWPURGE")
+If [L]YALLOW <> 1
   End
 Endif
 ```

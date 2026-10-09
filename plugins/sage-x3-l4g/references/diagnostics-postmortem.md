@@ -76,7 +76,7 @@ VERSYMB (V11 menu Development > Utilities > Verifications > Locks > Locked symbo
 machine, user, X3 identifier (`adxuid(1)` of the session) and date-time. Object symbols are the object code followed
 by the key (e.g. `AUSMARTIN` for user MARTIN; multi-part keys put the second component first, separated by `\`).
 The **User Monitor** action jumps to the session holding the symbol; ending that session releases it.
-Sage's Lock documentation notes that V7-style code relies on optimistic locking (`RewriteByKey` + UPDTICK)
+Sage's Lock documentation notes that V7-style code relies on optimistic locking (`Rewritebykey` + UPDTICK)
 instead of symbol locks — see `database.md`.
 
 Order of preference to clear a lock: let the user finish/leave the record → end the owning session from the
@@ -146,7 +146,7 @@ log/redo saturation and backups running at the same time.
 
 ## Incident report template
 
-```
+```text
 INCIDENT:        <one-line summary>
 DATE/TIME:       <start - end, timezone>
 DETECTED BY:     <user / monitoring / customer>

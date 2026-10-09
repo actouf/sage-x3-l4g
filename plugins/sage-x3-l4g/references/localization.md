@@ -37,7 +37,7 @@ reads dates and amounts from a file. Currencies, countries and character sets ar
 
 ## mess and message chapters
 
-```
+```l4g
 mess(NUMBER, CHAPTER, TABLE)
 ```
 
@@ -68,7 +68,8 @@ Local Char MSG(250)
 ## Local menu values
 
 A field whose data type is a local menu stores the **rank** of the choice (local menu 1: 1 = No,
-2 = Yes). Compare ranks in code; convert to a label only for display.
+2 = Yes). Compare ranks in code; convert to a label only for display. Defining local menus (TXT,
+COMBOS) and reading miscellaneous tables: `data-dictionary.md`.
 
 ```l4g
 Local Char LABEL(30)
@@ -204,7 +205,7 @@ For `1.234,50`, remove the dots before swapping the comma. Rounding to a currenc
 - `format$` returns a string of spaces when the value does not match the format: test for it.
 - A local menu stores ranks; inserting a choice in the middle of the chapter changes existing data.
 
-See also: `localization-formats.md`, `conventions-and-naming.md`, `builtin-functions.md`,
+See also: `localization-formats.md`, `data-dictionary.md`, `conventions-and-naming.md`, `builtin-functions.md`,
 `workflow-email.md`, `v12-classes.md`.
 
 ## Sources
@@ -225,4 +226,4 @@ See also: `localization-formats.md`, `conventions-and-naming.md`, `builtin-funct
 - https://online-help.sagex3.com/erp/12/en-us/Content/V7DEV/4gl_ctrans.html
 - https://online-help.sagex3.com/erp/12/en-us/Content/V7DEV/4gl_char.html
 - https://online-help.sagex3.com/erp/12/en-us/Content/V7DEV/4gl_date$.html
-- https://www.greytrix.com/blogs/sagex3/?p=12640 (community: GLANGUE)
+- https://www.greytrix.com/blogs/sagex3/2018/05/03/how-to-fetch-folder-language-using-global-variable-in-sage-x3/ (community: GLANGUE)

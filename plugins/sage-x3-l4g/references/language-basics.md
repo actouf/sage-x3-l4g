@@ -68,6 +68,16 @@ Local Instance YORD Using C_YORDER     : # V7+ class instance, see v12-classes.m
   of dimensions, `dim(VAR,-N)` = first index of dimension N. `maxtab(ARR)` = highest used index.
 - `Raz VAR, [F:ABV]` resets to null values (`""`, `0`, `[0/0/0]`, `Null`); `Kill VAR` destroys an
   `[L]` or `[V]` variable.
+- `Sorta [NUMBER] ARRAY_LIST [Order By EXPRESSION_LIST] [Desc]` sorts parallel arrays together on their
+  first NUMBER elements (default: the smallest dimension; NUMBER must be > 0). Without `Order By` the
+  first array is the key, then the second... In the `Order By` expressions `[S]indice` starts at 0, so
+  1-based arrays need `indice+1`. `Desc` (or a key multiplied by -1) sorts descending. The sort is not
+  stable and does not work on collections of class instances. Errors: 8 bad index, 10 NUMBER not
+  numeric, 50 NUMBER negative.
+
+```l4g
+Sorta [L]NB [L]AMOUNTS, [L]CODES Order By [L]AMOUNTS([S]indice + 1) Desc : # 1-based arrays, largest first
+```
 
 ## Data types
 
@@ -130,12 +140,12 @@ Case [L]STATUS
     [L]TEXT = "Inconnu"
 Endcase
 
-For I = 1 To dim(LINES)
-  Break LINES(I) = ""                  : # Break 0 does nothing, Break 1 exits the loop
-  Call YPROCESS_LINE(LINES(I)) From YUTIL
+For [L]I = 1 To dim([L]LINES)
+  Break [L]LINES([L]I) = ""            : # Break 0 does nothing, Break 1 exits the loop
+  Call YPROCESS_LINE([L]LINES([L]I)) From YUTIL
 Next I
 
-For CUR = "EUR", "USD", "GBP"          : # list form
+For [L]CUR = "EUR", "USD", "GBP"       : # list form
   Gosub YLOAD_RATE
 Next CUR
 
@@ -169,8 +179,8 @@ Value    Integer NB                    : # copy: the caller may pass an expressi
 Variable Decimal TOTAL                 : # reference: written back to the caller
 Local Integer I
   [L]TOTAL = 0
-  For I = 1 To [L]NB
-    [L]TOTAL += [L]AMOUNTS(I)
+  For [L]I = 1 To [L]NB
+    [L]TOTAL += [L]AMOUNTS([L]I)
   Next I
 End
 
@@ -193,7 +203,7 @@ Call =[L]SUBNAME With ([L]TOTAL) From YUTIL
 - `Const` is a parameter-passing mode (read-only reference), not a constant declaration. A constant or an
   expression can only be passed to a `Value` parameter; passing one to `Variable` or `Const` fails at
   run time.
-- `Funprog` must end with `End VALUE` (a bare `End` is an error there); `Subprog` ends with `End`. Both
+- `Funprog` ends with `End RETURN_VALUE` (the only form Sage documents); `Subprog` ends with `End`. Both
   are "Public" keywords in Sage's glossary, i.e. they already existed in V6.
 - `Call` / `func` create a new `[L]` class. Inherited: globals, system variables, opened tables, opened
   sequential files. Not inherited: the caller's locals and its `Onerrgo` label.
@@ -271,3 +281,4 @@ See also: `database.md`, `builtin-functions.md`, `sequential-files.md`, `v12-cla
   4gl_errl, 4gl_errp, 4gl_errm, 4gl_errmes$.html)
 - https://online-help.sagex3.com/erp/12/en-us/Content/V7DEV/4gl_dim.html (also 4gl_maxtab, 4gl_raz,
   4gl_kill)
+- https://online-help.sagex3.com/erp/12/en-us/Content/V7DEV/4gl_sorta.html

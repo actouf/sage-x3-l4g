@@ -76,17 +76,17 @@ running on the batch server (`GSERVEUR` = 1 there; the batch server keeps one lo
 Funprog YIMP_SILENT(YTEMPLATE, YFILE, YMSG)
 Value    Char YTEMPLATE(), YFILE()
 Variable Char YMSG()
-  YMSG = ""
+  [L]YMSG = ""
   If !GSERVEUR
-    Call OUVRE_TRACE("Import " + YTEMPLATE) From LECFIC
+    Call OUVRE_TRACE("Import " + [L]YTEMPLATE) From LECFIC
   Endif
-  Call IMPORTSIL(YTEMPLATE, YFILE) From GIMPOBJ
+  Call IMPORTSIL([L]YTEMPLATE, [L]YFILE) From GIMPOBJ
   If !GSERVEUR
     Call CLOSE_LOC From LECFIC : # as in Sage's appendix; community code uses FERME_TRACE
   Endif
   # Failure test as used in community code (STAT values are not listed in the help)
   If [M:IMP2]STAT <> 0 or GOK < 1
-    Call ERR_IMPORT([M:IMP2]STAT, YMSG) From GIMPOBJ
+    Call ERR_IMPORT([M:IMP2]STAT, [L]YMSG) From GIMPOBJ
     End [V]CST_AERROR
   Endif
 End [V]CST_AOK
@@ -113,16 +113,16 @@ Local Char    YMODEXP(20), YCHRONO(3), YEXEC(10), YRECSEP(1), YMESSA(250)
 Local Char    YCRIT(250)(1..10)        : # dimension 10 per the SOAP page
 Local Clbfile YDATA(0)
 Local Integer YREQNUM, YSTATUS
-  YMODEXP = "YBPC"
-  YCHRONO = "NO"                       : # YES = chronological export
-  YEXEC   = "REALTIME"                 : # BATCH returns a request number instead of data
-  YRECSEP = chr$(10)
-  YCRIT(1) = "[F:BPC]BPCSTA=1"         : # filters written in X3 language
-  Call EXPORT(YMODEXP, YCHRONO, YCRIT, YEXEC, YRECSEP, YDATA, YREQNUM, YSTATUS, YMESSA)
+  [L]YMODEXP = "YBPC"
+  [L]YCHRONO = "NO"                    : # YES = chronological export
+  [L]YEXEC   = "REALTIME"              : # BATCH returns a request number instead of data
+  [L]YRECSEP = chr$(10)
+  [L]YCRIT(1) = "[F:BPC]BPCSTA=1"      : # filters written in X3 language
+  Call EXPORT([L]YMODEXP, [L]YCHRONO, [L]YCRIT, [L]YEXEC, [L]YRECSEP, [L]YDATA, [L]YREQNUM, [L]YSTATUS, [L]YMESSA)
   & From AOWSEXPORT
   # Web service status: 0 = OK. The caller has opened the trace (OUVRE_TRACE From LECFIC).
-  If YSTATUS <> 0
-    Call ECR_TRACE("Export YBPC failed: " + YMESSA, 1) From GESECRAN
+  If [L]YSTATUS <> 0
+    Call ECR_TRACE("Export YBPC failed: " + [L]YMESSA, 1) From GESECRAN
   Endif
 ```
 
@@ -224,9 +224,9 @@ See also: `batch-scheduling.md`, `data-migration.md`, `sequential-files.md`, `wo
 - https://online-help.sagex3.com/erp/12/en-us/Content/FCT/GESAOR.htm
 - https://online-help.sagex3.com/erp/12/en-us/Content/MODEL/VERIF_CRE.htm
 - https://online-help.sagex3.com/erp/12/en-us/Content/V7DEV/api-guide_api-soap-import-export.html
-- https://communityhub.sage.com/us/sage_x3/f/general-discussion/102514/importsil-creating-file-but-not-importing
-- https://communityhub.sage.com/us/sage_x3/f/general-discussion/103337/import-template-through-code
+- https://communityhub.sage.com/sage-global-solutions/sage_x3/f/general-discussion/102514/importsil-creating-file-but-not-importing
+- https://communityhub.sage.com/sage-global-solutions/sage_x3/f/general-discussion/103337/import-template-through-code
 - https://communityhub.sage.com/fr/sage-x3/f/technique/250171/catcher-les-erreurs-dans-un-script-d-import
-- https://communityhub.sage.com/us/sage_x3/f/general-discussion/108302/function-importsil
-- https://communityhub.sage.com/us/sage_x3/f/general-discussion/199927/x3v12-4gl-how-to-run-silent-export-from-an-export-template-in-4gl-only
+- https://communityhub.sage.com/sage-global-solutions/sage_x3/f/general-discussion/108302/function-importsil
+- https://communityhub.sage.com/sage-global-solutions/sage_x3/f/general-discussion/199927/x3v12-4gl-how-to-run-silent-export-from-an-export-template-in-4gl-only
 - https://www.greytrix.com/blogs/sagex3/2014/01/10/moving-a-file-from-a-directory/

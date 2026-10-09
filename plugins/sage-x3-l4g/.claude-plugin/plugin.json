@@ -1,7 +1,7 @@
 {
   "name": "sage-x3-l4g",
   "version": "1.0.0",
-  "description": "Writes, reviews, and debugs Sage X3 V12 L4G (4GL / X3 script / Adonix) code: classes and representations, Classic objects and entry points, transactions, Syracuse REST and SOAP, imports, workflows, batch, AXUNIT tests.",
+  "description": "Writes, reviews, and debugs Sage X3 V12 L4G (4GL / X3 script / Adonix) code: classes and representations, Classic objects and entry points, transactions, data dictionary and parameters, Syracuse REST and SOAP, imports, workflows, automatic journals, batch, AXUNIT tests.",
   "author": {
     "name": "actouf",
     "url": "https://github.com/actouf"
@@ -9,5 +9,5 @@
   "homepage": "https://actouf.github.io/sage-x3-l4g/",
   "repository": "https://github.com/actouf/sage-x3-l4g",
   "license": "MIT",
-  "keywords": ["sage-x3", "l4g", "4gl", "x3-script", "adonix", "erp", "syracuse", "skill"]
+  "keywords": ["sage-x3", "l4g", "4gl", "x3-script", "adonix", "erp", "syracuse", "data-dictionary", "accounting", "skill"]
 }

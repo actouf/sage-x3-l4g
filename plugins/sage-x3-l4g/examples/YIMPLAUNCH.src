@@ -53,17 +53,17 @@ End [L]STA
 Funprog YIMP_SILENT(YTEMPLATE, YFILE, YMSG)
 Value    Char YTEMPLATE(), YFILE()
 Variable Char YMSG()
-  YMSG = ""
+  [L]YMSG = ""
   If !GSERVEUR
-    Call OUVRE_TRACE("Import " + YTEMPLATE) From LECFIC
+    Call OUVRE_TRACE("Import " + [L]YTEMPLATE) From LECFIC
   Endif
-  Call IMPORTSIL(YTEMPLATE, YFILE) From GIMPOBJ
+  Call IMPORTSIL([L]YTEMPLATE, [L]YFILE) From GIMPOBJ
   If !GSERVEUR
     Call CLOSE_LOC From LECFIC : # as in Sage's appendix; community code uses FERME_TRACE
   Endif
   # Failure test as used in community code (STAT values are not listed in the help)
   If [M:IMP2]STAT <> 0 or GOK < 1
-    Call ERR_IMPORT([M:IMP2]STAT, YMSG) From GIMPOBJ
+    Call ERR_IMPORT([M:IMP2]STAT, [L]YMSG) From GIMPOBJ
     End [V]CST_AERROR
   Endif
 End [V]CST_AOK

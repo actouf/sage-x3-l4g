@@ -32,14 +32,14 @@ others getting HTTP 400 on unusual APIs: validate the exact request in SoapUI or
 
 ## EXEC_HTTP signature
 
-```
-Funprog EXEC_HTTP(HEADERCOD, HEADERVAL, DATA, RESHEAD, RESBODY)    (library ASYRWEBSER)
- Value    Char    HEADERCOD()(1..)  : header keys
- Value    Char    HEADERVAL()(1..)  : header values
- Value    Clbfile DATA()            : body, for POST and PUT only
- Variable Clbfile RESHEAD()         : response header
- Variable Clbfile RESBODY()         : response body
- returns the HTTP status (Integer)
+```l4g
+Funprog EXEC_HTTP(HEADERCOD, HEADERVAL, DATA, RESHEAD, RESBODY) : # library ASYRWEBSER
+Value    Char    HEADERCOD()(1..)  : # header keys
+Value    Char    HEADERVAL()(1..)  : # header values
+Value    Clbfile DATA()            : # body, for POST and PUT only
+Variable Clbfile RESHEAD()         : # response header
+Variable Clbfile RESBODY()         : # response body
+# Returns the HTTP status (Integer)
 ```
 
 Sage's sample passes the target as the pseudo-headers `url` and `method` in the first two array
@@ -59,15 +59,15 @@ Variable Clbfile DEST()
 Value    Char    TXT()
 Local Integer I
 Local Char    C(1)
-  For I = 1 To len(TXT)
-    C = mid$(TXT, I, 1)
-    Case C
-      When "&"      : Append DEST, "&amp;"
-      When "<"      : Append DEST, "&lt;"
-      When ">"      : Append DEST, "&gt;"
-      When chr$(34) : Append DEST, "&quot;"
-      When "'"      : Append DEST, "&apos;"
-      When Default  : Append DEST, C
+  For [L]I = 1 To len([L]TXT)
+    [L]C = mid$([L]TXT, [L]I, 1)
+    Case [L]C
+      When "&"      : Append [L]DEST, "&amp;"
+      When "<"      : Append [L]DEST, "&lt;"
+      When ">"      : Append [L]DEST, "&gt;"
+      When chr$(34) : Append [L]DEST, "&quot;"
+      When "'"      : Append [L]DEST, "&apos;"
+      When Default  : Append [L]DEST, [L]C
     Endcase
   Next I
 End
@@ -88,19 +88,19 @@ Variable Clbfile XML()
 Value    Char    TAG()
 Local Integer P1, P2
 Local Char    OPENTAG(100), CLOSETAG(100), RESULT(255)
-  OPENTAG  = "<" + TAG + ">"
-  CLOSETAG = "</" + TAG + ">"
-  P1 = instr(1, XML, OPENTAG)
-  If P1 = 0
+  [L]OPENTAG  = "<" + [L]TAG + ">"
+  [L]CLOSETAG = "</" + [L]TAG + ">"
+  [L]P1 = instr(1, [L]XML, [L]OPENTAG)
+  If [L]P1 = 0
     End ""
   Endif
-  P1 += len(OPENTAG)
-  P2 = instr(P1, XML, CLOSETAG)
-  If P2 = 0
+  [L]P1 += len([L]OPENTAG)
+  [L]P2 = instr([L]P1, [L]XML, [L]CLOSETAG)
+  If [L]P2 = 0
     End ""
   Endif
-  RESULT = mid$(XML, P1, P2 - P1)
-End RESULT
+  [L]RESULT = mid$([L]XML, [L]P1, [L]P2 - [L]P1)
+End [L]RESULT
 ```
 
 A SOAP 1.1 fault is a `<prefix:Fault>` element carrying an unqualified `<faultstring>`; the prefix
@@ -118,33 +118,33 @@ Variable Char ERRMSG()
 Local Char    HCOD(64)(4), HVAL(255)(4), TRACKNUM(50), STA(10)
 Local Clbfile ENV(1), RESHEAD(0), RESBODY(0)
 Local Integer HTTPSTA
-  Raz ERRMSG
-  ENV = '<?xml version="1.0" encoding="UTF-8"?>'
-  Append ENV, '<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"'
-  Append ENV, ' xmlns:car="http://carrier.example/ws"><soapenv:Body><car:GetTracking>'
-  Append ENV, '<car:Reference>'
-  Call YXML_APPEND(ENV, ORDREF) From YXMLLIB
-  Append ENV, '</car:Reference></car:GetTracking></soapenv:Body></soapenv:Envelope>'
+  Raz [L]ERRMSG
+  [L]ENV = '<?xml version="1.0" encoding="UTF-8"?>'
+  Append [L]ENV, '<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"'
+  Append [L]ENV, ' xmlns:car="http://carrier.example/ws"><soapenv:Body><car:GetTracking>'
+  Append [L]ENV, '<car:Reference>'
+  Call YXML_APPEND([L]ENV, [L]ORDREF) From YXMLLIB
+  Append [L]ENV, '</car:Reference></car:GetTracking></soapenv:Body></soapenv:Envelope>'
 
-  HCOD(0) = "url"          : HVAL(0) = "https://carrier.example/ws/tracking.svc"
-  HCOD(1) = "method"       : HVAL(1) = "POST"
-  HCOD(2) = "Content-Type" : HVAL(2) = "text/xml; charset=utf-8"
-  HCOD(3) = "SOAPAction"   : HVAL(3) = '"http://carrier.example/ws/GetTracking"'
-  HTTPSTA = func ASYRWEBSER.EXEC_HTTP(HCOD, HVAL, ENV, RESHEAD, RESBODY)
+  [L]HCOD(0) = "url"          : [L]HVAL(0) = "https://carrier.example/ws/tracking.svc"
+  [L]HCOD(1) = "method"       : [L]HVAL(1) = "POST"
+  [L]HCOD(2) = "Content-Type" : [L]HVAL(2) = "text/xml; charset=utf-8"
+  [L]HCOD(3) = "SOAPAction"   : [L]HVAL(3) = '"http://carrier.example/ws/GetTracking"'
+  [L]HTTPSTA = func ASYRWEBSER.EXEC_HTTP([L]HCOD, [L]HVAL, [L]ENV, [L]RESHEAD, [L]RESBODY)
 
-  STA = "KO"
-  If instr(1, RESBODY, ":Fault>") > 0
-    ERRMSG = func YXMLLIB.YXML_TAG(RESBODY, "faultstring")
-  Elsif HTTPSTA = 200
-    TRACKNUM = func YXMLLIB.YXML_TAG(RESBODY, "a:TrackingNumber")
-    If TRACKNUM <> ""
-      STA = "OK"
+  [L]STA = "KO"
+  If instr(1, [L]RESBODY, ":Fault>") > 0
+    [L]ERRMSG = func YXMLLIB.YXML_TAG([L]RESBODY, "faultstring")
+  Elsif [L]HTTPSTA = 200
+    [L]TRACKNUM = func YXMLLIB.YXML_TAG([L]RESBODY, "a:TrackingNumber")
+    If [L]TRACKNUM <> ""
+      [L]STA = "OK"
     Endif
   Else
-    ERRMSG = "HTTP status " + num$(HTTPSTA)
+    [L]ERRMSG = "HTTP status " + num$([L]HTTPSTA)
   Endif
-  Call YINTLOG_WRITE("OUT", "CARRIER", "GetTracking", ORDREF, HTTPSTA, STA, ENV, RESBODY) From YINTLOGLIB
-End TRACKNUM
+  Call YINTLOG_WRITE("OUT", "CARRIER", "GetTracking", [L]ORDREF, [L]HTTPSTA, [L]STA, [L]ENV, [L]RESBODY) From YINTLOGLIB
+End [L]TRACKNUM
 ```
 
 `HCOD(64)(4)` declares indexes 0 to 3 for the four pseudo-headers used here. Sage's sample declares
@@ -186,6 +186,6 @@ See also: `web-services-integration.md`, `web-services-rest-client.md`, `builtin
 - https://online-help.sagex3.com/erp/12/en-us/Content/V7DEV/4gl_append.html
 - https://online-help.sagex3.com/erp/12/en-us/Content/V7DEV/4gl_case.html
 - https://online-help.sagex3.com/erp/12/en-us/Content/V7DEV/4gl_clbfile.html
-- https://communityhub.sage.com/us/sage_x3/f/general-discussion/220325/connecting-to-an-external-rest-with-an-xml-header (community)
-- https://communityhub.sage.com/us/sage_x3/f/general-discussion/186961/3rd-party-webservice-soap-response (community)
-- https://communityhub.sage.com/us/sage_x3/f/general-discussion/120743/consuming-external-webservice-soap (community)
+- https://communityhub.sage.com/sage-global-solutions/sage_x3/f/general-discussion/220325/connecting-to-an-external-rest-with-an-xml-header (community)
+- https://communityhub.sage.com/sage-global-solutions/sage_x3/f/general-discussion/186961/3rd-party-webservice-soap-response (community)
+- https://communityhub.sage.com/sage-global-solutions/sage_x3/f/general-discussion/120743/consuming-external-webservice-soap (community)

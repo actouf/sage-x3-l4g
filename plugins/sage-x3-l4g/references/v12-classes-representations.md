@@ -52,11 +52,14 @@ Closest documented equivalent of each Classic hook, matched by when it runs:
 - **Hybrid development** (from Update 9): keep a Classic window but delegate CUD to a class
   (`ANOWRITE = 1` in `OUVRE`, `AINSERT`/`AUPDATE` from `CREATION`/`MODIF`). Sage warns this code
   will need rewriting later and does not support combined objects. Details in `classic-objects.md`.
+
+## Gotchas
+
 - Field-action code is lost when representations replace Classic windows: move rules into the class.
 - `Infbox`, `Errbox`, `Qstbox`, `Mask`, `Affzo`, `Actzo`, `Grizo`, `Diszo`, `Effzo`, `mkstat` are
   deprecated for code running in V7 mode; keep them in Classic page code only.
 - The `$ACTION` label of class scripts (pre-V11) is announced as deprecated in V12; some Sage how-to
-  pages still show `$METHODS` + `Case ACTION` for events. Use the split labels.
+  pages show `$METHODS` + `Case ACTION` for events. Use the split labels.
 - Never create codes starting with W (generated) and never edit generated scripts.
 
 See also: `v12-classes.md`, `v12-representations.md`, `classic-objects.md`, `screens-and-masks.md`,

@@ -108,17 +108,17 @@ Local Shortint TRANS_OPEN
   [L]TRANS_OPEN = adxlog                : # normally 1: the workflow owns the transaction
   If [L]TRANS_OPEN = 0 : Trbegin [YWL] : Endif
   Raz [F:YWL]
-  [F:YWL]YRULE = YRUL
-  [F:YWL]YKEY  = YCLE
+  [F:YWL]YRULE = [L]YRUL
+  [F:YWL]YKEY  = [L]YCLE
   [F:YWL]YDAT  = date$
   Write [YWL]
   If fstat
     If [L]TRANS_OPEN = 0 : Rollback : Endif
-    YRESULT = "KO"
+    [L]YRESULT = "KO"
     End
   Endif
   If [L]TRANS_OPEN = 0 : Commit : Endif
-  YRESULT = "OK"
+  [L]YRESULT = "OK"
 End
 ```
 
@@ -154,21 +154,21 @@ Local Char    YFROM(250), YHEADER(250)
 Local Char    YA_USER(250)(1..), YCC_USER(250)(1..), YATTACH(250)(1..)
 Local Clbfile YBODY(0)
 Local Integer YSTA
-  YFROM      = "erp@example.com"
-  YA_USER(1) = YTO
-  YHEADER    = YSUBJECT
-  YATTACH(1) = YFILE                   : # Sage's sample uses volume paths such as "[ATT]/file.doc"
+  [L]YFROM      = "erp@example.com"
+  [L]YA_USER(1) = [L]YTO
+  [L]YHEADER    = [L]YSUBJECT
+  [L]YATTACH(1) = [L]YFILE             : # Sage's sample uses volume paths such as "[ATT]/file.doc"
   # Body texts: literal for brevity — use mess() in real code
-  Append YBODY, "Bonjour," + chr$(10)
-  Append YBODY, "Veuillez trouver le document en pièce jointe." + chr$(10)
-  YSTA = func ASYRMAIL.ASEND_MAIL(GACTX, YFROM, YA_USER, YCC_USER, YHEADER, YBODY, YATTACH, [V]CST_ANO)
+  Append [L]YBODY, "Bonjour," + chr$(10)
+  Append [L]YBODY, "Veuillez trouver le document en pièce jointe." + chr$(10)
+  [L]YSTA = func ASYRMAIL.ASEND_MAIL(GACTX, [L]YFROM, [L]YA_USER, [L]YCC_USER, [L]YHEADER, [L]YBODY, [L]YATTACH, [V]CST_ANO)
   # The caller has opened the trace (OUVRE_TRACE From LECFIC, see debugging-traces.md)
-  If YSTA = [V]CST_AINFO
-    Call ECR_TRACE("Mail sent, attachment missing: " + YFILE, 1) From GESECRAN
-  Elsif YSTA <> [V]CST_AOK
-    Call ECR_TRACE("Mail to " + YTO + " failed", 1) From GESECRAN
+  If [L]YSTA = [V]CST_AINFO
+    Call ECR_TRACE("Mail sent, attachment missing: " + [L]YFILE, 1) From GESECRAN
+  Elsif [L]YSTA <> [V]CST_AOK
+    Call ECR_TRACE("Mail to " + [L]YTO + " failed", 1) From GESECRAN
   Endif
-End YSTA
+End [L]YSTA
 ```
 
 - The API page says the library calls the classic `meladx` executable. It documents no content-type
@@ -220,6 +220,6 @@ See also: `batch-scheduling.md`, `imports-exports.md`, `audit-compliance.md`, `e
 - https://online-help.sagex3.com/erp/11/en-US/V7DEV/api-guide_send-mail.html
 - https://online-help.sagex3.com/erp/12/en-us/Content/V7DEV/administration-reference_notification-servers.html
 - https://online-help.sagex3.com/erp/12/en-us/Content/FCT/GESADS.htm
-- https://communityhub.sage.com/us/sage_x3/f/general-discussion/83786/how-to-call-trigger-a-workflow-rule-in-code
-- https://communityhub.sage.com/us/sage_x3/f/general-discussion/200055/html-email-text-in-workflow-rules
+- https://communityhub.sage.com/sage-global-solutions/sage_x3/f/general-discussion/83786/how-to-call-trigger-a-workflow-rule-in-code
+- https://communityhub.sage.com/sage-global-solutions/sage_x3/f/general-discussion/200055/html-email-text-in-workflow-rules
 - https://communityhub.sage.com/sage-global-solutions/sage_x3/b/sageerp_x3_product_support_blog/posts/how-to-send-mail-programmatically

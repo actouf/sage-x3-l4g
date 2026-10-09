@@ -46,7 +46,7 @@ Subprog YLOAD_VIEW(BPC)
 Value Char BPC()
 Local File BPCUSTOMER [BPC]
 Local Mask YBPCVIEW [YBV]          : # screen YBPCVIEW declared with abbreviation YBV
-  Read [BPC]BPC0 = BPC
+  Read [BPC]BPC0 = [L]BPC
   If fstat = 0
     [M:YBV] = [F:BPC]              : # copies the fields that have the same name
   Endif
@@ -95,7 +95,7 @@ Defined per field in the *Actions* grid of GESAMK:
 # In SPEXXX (control action, type Control / SPE, on grid field QTY)
 Subprog C_QTY(VALEUR)
 Variable Decimal VALEUR
-  If VALEUR = 0 and nolign = 1
+  If [L]VALEUR = 0 and nolign = 1
     GMESSAGE = mess(3, 160, 1) : # "Quantity cannot be 0 on the first line"
     mkstat = 1                 : # reject the value (Sage sample)
   Endif
@@ -128,7 +128,7 @@ ranges `FIELD1-FIELD9`, array element `FIELD(I+1)`, computed `=expression`. On g
 # In SPEYBC1 (After change / SPE on flag Y_FLG): enable the note only when the flag is Yes
 Subprog AM_Y_FLG(VALEUR)
 Variable Integer VALEUR
-  If VALEUR = 2
+  If [L]VALEUR = 2
     Actzo [M:YBC1]Y_NOTE
   Else
     Effzo [M:YBC1]Y_NOTE

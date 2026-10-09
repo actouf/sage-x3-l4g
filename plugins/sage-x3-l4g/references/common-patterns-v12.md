@@ -168,12 +168,12 @@ Local Char    YFROM(250), YSUBJECT(250)
 Local Char    YTO(250)(1..), YCC(250)(1..), YATTACH(250)(1..)
 Local Clbfile YBODY(0)
 Local Integer YSTA
-  YFROM    = "erp@example.com"
-  YTO(1)   = "finance@example.com"
-  YSUBJECT = "Contrats clos"
-  Append YBODY, "Bonjour," + chr$(10)
-  Append YBODY, "Le traitement de clôture est terminé." + chr$(10)
-  YSTA = func ASYRMAIL.ASEND_MAIL(GACTX, YFROM, YTO, YCC, YSUBJECT, YBODY, YATTACH, [V]CST_ANO)
+  [L]YFROM    = "erp@example.com"
+  [L]YTO(1)   = "finance@example.com"
+  [L]YSUBJECT = "Contrats clos"
+  Append [L]YBODY, "Bonjour," + chr$(10)
+  Append [L]YBODY, "Le traitement de clôture est terminé." + chr$(10)
+  [L]YSTA = func ASYRMAIL.ASEND_MAIL(GACTX, [L]YFROM, [L]YTO, [L]YCC, [L]YSUBJECT, [L]YBODY, [L]YATTACH, [V]CST_ANO)
   # [V]CST_AOK sent, [V]CST_AINFO an attachment is missing, [V]CST_AERROR failed
 ```
 
@@ -198,7 +198,7 @@ Local Date     TODAY
   [L]TODAY = date$
   YLOG = NewInstance C_ALOG AllocGroup Null
   [L]LOGST = fmet YLOG.ABEGINLOG("YCT_CLOSE_EXPIRED")
-  LOGNAME = fmet YLOG.AGETNAME()
+  [L]LOGNAME = fmet YLOG.AGETNAME()
   For [YCT]YCT0 Where YSTATUS = 2 and YENDDAT <> [0/0/0] and YENDDAT < [L]TODAY
     YCTI = NewInstance C_YCONTRACT AllocGroup Null
     [L]YSTA = fmet YCTI.AREAD([F:YCT]YCTNUM)

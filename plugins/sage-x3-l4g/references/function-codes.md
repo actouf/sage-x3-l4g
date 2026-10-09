@@ -12,6 +12,7 @@ the Representations workbench page; a code whose page returns 404 is listed unde
 - [Script dictionary](#script-dictionary)
 - [Patches, logs and locks](#patches-logs-and-locks)
 - [Integration and import/export](#integration-and-importexport)
+- [Accounting](#accounting)
 - [Batch server](#batch-server)
 - [Workflow](#workflow)
 - [Printing](#printing)
@@ -37,12 +38,18 @@ the Representations workbench page; a code whose page returns 404 is listed unde
 |---|---|---|---|
 | GESATB | Tables (table dictionary, validation) | Development > Data and parameters > Tables > Tables | [V12](https://online-help.sagex3.com/erp/12/en-us/Content/FCT/GESATB.htm) · [V11](https://online-help.sagex3.com/erp/11/en-US/FCT/GESATB.htm) |
 | GESATY | Data types | Development > Data and parameters > Tables > Data types | [V12](https://online-help.sagex3.com/erp/12/en-us/Content/FCT/GESATY.htm) · [V11](https://online-help.sagex3.com/erp/11/en-US/FCT/GESATY.htm) |
+| GESATYC | Data Types Personalization (changes to standard data types) | — | [V12](https://online-help.sagex3.com/erp/12/en-us/Content/FCT/GESATYC.htm) |
+| GESATBP | Table properties | — | [V12](https://online-help.sagex3.com/erp/12/en-us/Content/FCT/GESATBP.htm) |
 | TXT | Local menus and message chapters (table APLSTD) | Development > Data and parameters > Tables > Local menus - messages | [V12](https://online-help.sagex3.com/erp/12/en-us/Content/FCT/TXT.htm) · [V11](https://online-help.sagex3.com/erp/11/en-US/FCT/TXT.htm) |
+| COMBOS | Local menus (values of the menus marked Changeable) | Setup > General parameters > Local menus | [V12](https://online-help.sagex3.com/erp/12/en-us/Content/FCT/COMBOS.htm) · [V11](https://online-help.sagex3.com/erp/11/en-US/FCT/COMBOS.htm) |
+| GENMENULOC | Local menu update (regenerates the local-menu files) | Development > Utilities > Dictionary > Local menu update | [V12](https://online-help.sagex3.com/erp/12/en-us/Content/FCT/GENMENULOC.htm) · [V11](https://online-help.sagex3.com/erp/11/en-US/FCT/GENMENULOC.htm) |
 | GESAVW | Views | Development > Data and parameters > Views | [V12](https://online-help.sagex3.com/erp/12/en-us/Content/FCT/GESAVW.htm) · [V11](https://online-help.sagex3.com/erp/11/en-US/FCT/GESAVW.htm) |
 | GESACLA | Classes (V7+ class dictionary) | Development > Data and parameters > Classes > Classes | [V12](https://online-help.sagex3.com/erp/12/en-us/Content/FCT/GESACLA.htm) · [V11](https://online-help.sagex3.com/erp/11/en-US/FCT/GESACLA.htm) |
 | GESASW | Representations (code given on the workbench page; no FCT page) | — | [Workbench](https://online-help.sagex3.com/erp/12/en-us/Content/V7DEV/workbench-reference_representation-management.html) |
 | GESACV | Activity codes | Development > Data and parameters > Development setup > Activity codes | [V12](https://online-help.sagex3.com/erp/12/en-us/Content/FCT/GESACV.htm) · [V11](https://online-help.sagex3.com/erp/11/en-US/FCT/GESACV.htm) |
 | GESADP | Parameter definitions ("Setup definitions") | Development > Data and parameters > Development setup > Parameter definition | [V12](https://online-help.sagex3.com/erp/12/en-us/Content/FCT/GESADP.htm) · [V11](https://online-help.sagex3.com/erp/11/en-US/FCT/GESADP.htm) |
+| ADPVAL | Parameter values | Setup > General parameters > Parameter values | [V12](https://online-help.sagex3.com/erp/12/en-us/Content/FCT/ADPVAL.htm) · [V11](https://online-help.sagex3.com/erp/11/en-US/FCT/ADPVAL.htm) |
+| VALDICO | Dictionary validation (mass validation of dictionary elements) | Development > Utilities > Dictionary > Validations > Dictionary | [V12](https://online-help.sagex3.com/erp/12/en-us/Content/FCT/VALDICO.htm) · [V11](https://online-help.sagex3.com/erp/11/en-US/FCT/VALDICO.htm) |
 | GESAGB | Global variables (V6 mechanism) | Development > Data and parameters > Development setup > Global variables | [V12](https://online-help.sagex3.com/erp/12/en-us/Content/FCT/GESAGB.htm) · [V11](https://online-help.sagex3.com/erp/11/en-US/FCT/GESAGB.htm) |
 | GESACM | Sequence Number Definition (V12 title): supervisor counters, the `[C]` variables stored in table APLCOM — not document numbering | Development > Data and parameters > Development setup > Sequence number type variables | [V12](https://online-help.sagex3.com/erp/12/en-us/Content/FCT/GESACM.htm) · [V11](https://online-help.sagex3.com/erp/11/en-US/FCT/GESACM.htm) |
 | GESANM | Sequence number structures (Structures): the document counters read by `NUMERO`, assigned with GESTCA | Setup > General parameters > Sequence number definition > Structures | [V12](https://online-help.sagex3.com/erp/12/en-us/Content/FCT/GESANM.htm) · [V11](https://online-help.sagex3.com/erp/11/en-US/FCT/GESANM.htm) |
@@ -98,8 +105,17 @@ Since 2019 R4 the PATCH page directs standard product updates to the **Updates**
 | GIMPOBJ | Imports (run a template; **Test** button) | Usage > Imports / exports > Imports | [V12](https://online-help.sagex3.com/erp/12/en-us/Content/FCT/GIMPOBJ.htm) · [V11](https://online-help.sagex3.com/erp/11/en-US/FCT/GIMPOBJ.htm) |
 | GEXPOBJ | Export (total or chronological) | Usage > Imports / exports > Exports | [V12](https://online-help.sagex3.com/erp/12/en-us/Content/FCT/GEXPOBJ.htm) · [V11](https://online-help.sagex3.com/erp/11/en-US/FCT/GEXPOBJ.htm) |
 | GESAOW | Import/export temporary storage spaces (rejected records) | Usage > Imports / exports > Import/export temporary storage space | [V12](https://online-help.sagex3.com/erp/12/en-us/Content/FCT/GESAOW.htm) · [V11](https://online-help.sagex3.com/erp/11/en-US/FCT/GESAOW.htm) |
+| GESAPACK | Packages (Sage X3 Services API: structure of the nodes dictionary and GraphQL schema) | — | [V12](https://online-help.sagex3.com/erp/12/en-us/Content/FCT/GESAPACK.htm) |
+| GESANODEB | Node bindings (Sage X3 Services API nodes and properties) | — | [V12](https://online-help.sagex3.com/erp/12/en-us/Content/FCT/GESANODEB.htm) |
 
 SOAP publication uses GESASU and GESAWE (see [Script dictionary](#script-dictionary)).
+
+## Accounting
+
+| Code | Function | Menu path (V11 help) | Source |
+|---|---|---|---|
+| GESGAU | Automatic journals (posting of documents to accounting) | Setup > Financials > Accounting interface > Automatic journals | [V12](https://online-help.sagex3.com/erp/12/en-us/Content/FCT/GESGAU.htm) · [V11](https://online-help.sagex3.com/erp/11/en-US/FCT/GESGAU.htm) |
+| GESDSP | Prior allocation keys (analytical) | Common data > General accounting tables > Analytical > Analytical allocations | [V12](https://online-help.sagex3.com/erp/12/en-us/Content/FCT/GESDSP.htm) · [V11](https://online-help.sagex3.com/erp/11/en-US/FCT/GESDSP.htm) |
 
 ## Batch server
 
@@ -189,6 +205,9 @@ The manual **Currency rates** entry screen (table TABCHANGE) has no verified fun
 | GESVAL | 404 | Folder validation is done from GESADS; table validation from GESATB |
 | GESAREP | 404 | GESASW (Representations; code stated on the workbench page) |
 | GESACTX | 404 | The developer guide names the V7+ context dictionary "GESACTX", but there is no FCT page |
+| ADOVAL | 404; the supervisor parameters page calls the Parameter values function ADOVAL, and ADOVAL is also the script of `Call PARAM` | ADPVAL (Parameter values); `Call PARAM(...) From ADOVAL` in Classic code (`data-dictionary.md`) |
+| ADOTRT, VALTRT | 404; ADOTRT is named in Sage's security guide, VALTRT in Safe X3 Studio changelogs | Script editing and compiling: `development-workflow.md` |
+| GESAPINOD | 404; named on the GESANODEB page as the binding dictionary | GESANODEB |
 | GESAWS, GESAWT, GESAOT, GESBSV, GESACR, GESALI, GESAEX, GESALOCK | 404 | None: do not cite them |
 
 ## Gotchas
@@ -201,12 +220,13 @@ The manual **Currency rates** entry screen (table TABCHANGE) has no verified fun
 - Menu paths drift between versions and between Classic and Syracuse menus; quote the function code first
   and the path second.
 
-See also: `conventions-and-naming.md`, `personalisation-activity.md`, `security-permissions.md`,
+See also: `conventions-and-naming.md`, `data-dictionary.md`, `development-workflow.md`,
+`accounting-automatic-journals.md`, `personalisation-activity.md`, `security-permissions.md`,
 `batch-scheduling.md`, `localization.md`.
 
 ## Sources
-- https://online-help.sagex3.com/erp/12/en-us/Content/FCT/ (one page per code, linked in the tables above)
-- https://online-help.sagex3.com/erp/11/en-US/FCT/ (V11 pages, menu breadcrumbs)
+- `https://online-help.sagex3.com/erp/12/en-us/Content/FCT/<CODE>.htm` (one page per code, linked in the tables above, e.g. https://online-help.sagex3.com/erp/12/en-us/Content/FCT/GESATB.htm)
+- `https://online-help.sagex3.com/erp/11/en-US/FCT/<CODE>.htm` (V11 pages, menu breadcrumbs, e.g. https://online-help.sagex3.com/erp/11/en-US/FCT/GESATB.htm)
 - https://online-help.sagex3.com/erp/12/en-us/Content/FCT/PATCH.htm (PATCHT, Updates function)
 - https://online-help.sagex3.com/erp/12/en-us/Content/V7DEV/developer-guide_context-global-variables.html (GESACTX mention)
 - https://lvexpertisex3.com/x3help/ENG/FCT/FUNCURRAT.htm

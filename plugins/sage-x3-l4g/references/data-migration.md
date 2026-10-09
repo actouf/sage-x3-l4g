@@ -68,20 +68,20 @@ Local File BPCUSTOMER [BPC]
 Local Shortint YSTA, TRANS_OPEN
 Local Char     YMSG(250)
 Local Integer  YREJ
-  For [YSR]YSR0 Where BATCH_ID = YBATCH and STAT = 0
-    YSTA = 1 : YMSG = ""
+  For [YSR]YSR0 Where BATCH_ID = [L]YBATCH and STAT = 0
+    [L]YSTA = 1 : [L]YMSG = ""
     If [F:YSR]CODE = ""
-      YSTA = 8 : YMSG = "Code missing"             : # literal for brevity — use mess() in real code
+      [L]YSTA = 8 : [L]YMSG = "Code missing"       : # literal for brevity — use mess() in real code
     Else
       Read [BPC]BPC0 = [F:YSR]BPCNUM
       If fstat
-        YSTA = 8 : YMSG = "Unknown customer " + [F:YSR]BPCNUM : # literal for brevity — use mess() in real code
+        [L]YSTA = 8 : [L]YMSG = "Unknown customer " + [F:YSR]BPCNUM : # literal for brevity — use mess() in real code
       Endif
     Endif
-    If YSTA = 8 : YREJ += 1 : Endif
+    If [L]YSTA = 8 : [L]YREJ += 1 : Endif
     [L]TRANS_OPEN = adxlog
     If [L]TRANS_OPEN = 0 : Trbegin [YSU] : Endif
-    Update [YSU] Where BATCH_ID = YBATCH and LINENO = [F:YSR]LINENO With STAT = YSTA, MSG = YMSG
+    Update [YSU] Where BATCH_ID = [L]YBATCH and LINENO = [F:YSR]LINENO With STAT = [L]YSTA, MSG = [L]YMSG
     If fstat or adxuprec <> 1
       # Update fstat 1/3 already rolled back: Rollback without a transaction is error 48
       If [L]TRANS_OPEN = 0 and adxlog = 1 : Rollback : Endif
@@ -89,7 +89,7 @@ Local Integer  YREJ
       If [L]TRANS_OPEN = 0 : Commit : Endif
     Endif
   Next
-End YREJ
+End [L]YREJ
 ```
 
 Typical checks: mandatory values, references that must exist in X3 (read them, as above), code
@@ -115,8 +115,8 @@ Local File YSTGREF [YSU]
 Local File YREFDATA [YRD]
 Local Shortint TRANS_OPEN, YERR
 Local Integer  YKO
-  For [YSR]YSR0 Where BATCH_ID = YBATCH and STAT = 1
-    YERR = 0
+  For [YSR]YSR0 Where BATCH_ID = [L]YBATCH and STAT = 1
+    [L]YERR = 0
     [L]TRANS_OPEN = adxlog
     If [L]TRANS_OPEN = 0 : Trbegin [YRD], [YSU] : Endif
     Read [YRD]YRD0 = [F:YSR]CODE
@@ -128,23 +128,23 @@ Local Integer  YKO
       [F:YRD]AMOUNT = val([F:YSR]AMOUNT)
       [F:YRD]BPCNUM = [F:YSR]BPCNUM
       Write [YRD]
-      If fstat : YERR = 1 : Endif
+      If fstat : [L]YERR = 1 : Endif
     Endif
-    If YERR = 0
-      Update [YSU] Where BATCH_ID = YBATCH and LINENO = [F:YSR]LINENO With STAT = 2, MSG = ""
-      If fstat or adxuprec <> 1 : YERR = 1 : Endif
+    If [L]YERR = 0
+      Update [YSU] Where BATCH_ID = [L]YBATCH and LINENO = [F:YSR]LINENO With STAT = 2, MSG = ""
+      If fstat or adxuprec <> 1 : [L]YERR = 1 : Endif
     Endif
-    If YERR = 0
+    If [L]YERR = 0
       If [L]TRANS_OPEN = 0 : Commit : Endif
     Else
-      YKO += 1
+      [L]YKO += 1
       If [L]TRANS_OPEN = 0
         If adxlog = 1 : Rollback : Endif      : # a failed Update may already have rolled back
         Trbegin [YSU]                         : # record the failure in its own transaction
         # "Load failed": literal for brevity — use mess() in real code
-        Update [YSU] Where BATCH_ID = YBATCH and LINENO = [F:YSR]LINENO
+        Update [YSU] Where BATCH_ID = [L]YBATCH and LINENO = [F:YSR]LINENO
         & With STAT = 9, MSG = "Load failed"
-        If fstat
+        If fstat or adxuprec <> 1
           If adxlog = 1 : Rollback : Endif
         Else
           Commit
@@ -152,7 +152,7 @@ Local Integer  YKO
       Endif
     Endif
   Next
-End YKO
+End [L]YKO
 ```
 
 Why it is safe to rerun: loaded rows have STAT = 2 and are no longer selected; the target write and
@@ -169,8 +169,8 @@ likewise. A `For` loop is enough for staging:
 Local File YSTGREF [YSR]
 Local Integer YNB
 Local Decimal YTOT
-  For [YSR]YSR0 Where BATCH_ID = YBATCH and STAT = 2
-    YNB += 1 : YTOT += val([F:YSR]AMOUNT)
+  For [YSR]YSR0 Where BATCH_ID = [L]YBATCH and STAT = 2
+    [L]YNB += 1 : [L]YTOT += val([F:YSR]AMOUNT)
   Next
 ```
 
@@ -180,13 +180,13 @@ suffix in SQL; `Execsql` only runs DDL/DML and reports affected rows in `adxsqlr
 ```l4g
 Local Integer YDBTYPE
 Local Char    YDB(1), YREQ(250)(1..3)
-  YDBTYPE = fmet GACTX.APARAM.AGETVALNUM([V]CST_ALEVFOLD, "", "TYPDBA")
-  YDB = string$(YDBTYPE = 1, "O") + string$(YDBTYPE = 2, "S")
-  YREQ(1) = "select count(*), coalesce(sum(R.AMOUNT_0), 0) from YREFDATA R"
-  YREQ(2) = " join YSTGREF S on S.CODE_0 = R.CODE_0"
-  YREQ(3) = " where S.BATCH_ID_0 = '" + YBATCH + "' and S.STAT_0 = 2"
+  [L]YDBTYPE = fmet GACTX.APARAM.AGETVALNUM([V]CST_ALEVFOLD, "", "TYPDBA")
+  [L]YDB = string$([L]YDBTYPE = 1, "O") + string$([L]YDBTYPE = 2, "S")
+  [L]YREQ(1) = "select count(*), coalesce(sum(R.AMOUNT_0), 0) from YREFDATA R"
+  [L]YREQ(2) = " join YSTGREF S on S.CODE_0 = R.CODE_0"
+  [L]YREQ(3) = " where S.BATCH_ID_0 = '" + [L]YBATCH + "' and S.STAT_0 = 2"
   # The caller has opened the trace (OUVRE_TRACE From LECFIC, see debugging-traces.md)
-  For (Integer NB, Decimal TOT) From YDB Sql YREQ(1..3) As [YRC]
+  For (Integer NB, Decimal TOT) From [L]YDB Sql [L]YREQ(1..3) As [YRC]
     Call ECR_TRACE("Loaded rows " + num$([F:YRC]NB) + ", total " + num$([F:YRC]TOT), 0) From GESECRAN
   Next
 ```

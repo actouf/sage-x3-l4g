@@ -41,7 +41,8 @@ for sequential files.
   channel is used. One file per channel: opening another file on a channel closes the previous one.
   The maximum number of open sequential files is given by `adxmso`.
 - Second argument (bytes) of `Openo`: omitted or 0 truncates the file; **negative (-1) appends** at the
-  end; positive N truncates to N bytes. Of `Openi`: offset where reading starts. Of `Openio`: initial
+  end; positive N truncates the file to N bytes only when N is smaller than its size (otherwise the first
+  write pads it with null characters up to N). Of `Openi`: offset where reading starts. Of `Openio`: initial
   position, negative = end of file; `Openio` never truncates.
 - Paths: build them with `filpath("TMP", NAME, EXT)`; `"server@path"` reaches another server running an
   X3 engine. In cloud environments a sandbox white list applies: `checkpath(PATH, 1)` tests write access.
@@ -64,8 +65,8 @@ for sequential files.
 - Always set all three explicitly: do not depend on the defaults of another routine.
 - With a space as field separator, consecutive spaces count as one separator.
 - `Wrseq` cannot write UCS2; `Rdseq` can read it (`adxium` 122).
-- `Rdseq` with fewer variables than fields skips the extra fields; with more, the missing ones are
-  set to null values. `Wrseq` writes values like `num$` does (dates as `DD/MM/YYYY`).
+- `Rdseq` with more variables than fields sets the missing ones to null values; the page does not say
+  what happens to extra fields when there are fewer variables: read every field. `Wrseq` writes values like `num$` does (dates as `DD/MM/YYYY`).
 - A `Wrseq` list ending with `,` or `;` ends with the field separator instead of the record separator:
   the next `Wrseq` continues the same record.
 

@@ -40,19 +40,19 @@ Variable Char    CUSTNAME()
 Variable Integer RETSTA        : # 1 = OK, 0 = error
 Variable Char    RETMSG()
 Local File BPCUSTOMER [BPC]
-  Raz CUSTNAME, RETMSG
-  RETSTA = 0
-  If CUSTCODE = ""
-    RETMSG = "CUSTCODE is mandatory"          : # literal for brevity — use mess() in real code
+  Raz [L]CUSTNAME, [L]RETMSG
+  [L]RETSTA = 0
+  If [L]CUSTCODE = ""
+    [L]RETMSG = "CUSTCODE is mandatory"           : # literal for brevity — use mess() in real code
     End
   Endif
-  Read [BPC]BPC0 = CUSTCODE
+  Read [BPC]BPC0 = [L]CUSTCODE
   If fstat
-    RETMSG = "Unknown customer " + CUSTCODE   : # literal for brevity — use mess() in real code
+    [L]RETMSG = "Unknown customer " + [L]CUSTCODE : # literal for brevity — use mess() in real code
     End
   Endif
-  CUSTNAME = [F:BPC]BPCNAM
-  RETSTA = 1
+  [L]CUSTNAME = [F:BPC]BPCNAM
+  [L]RETSTA = 1
 End
 ```
 
@@ -208,5 +208,5 @@ See also: `web-services-integration.md`, `web-services-soap-client.md`, `web-ser
 - https://online-help.sagex3.com/erp/12/en-us/Content/FCT/GESASU.htm
 - https://online-help.sagex3.com/erp/12/en-us/Content/FCT/GESAWE.htm
 - https://online-help.sagex3.com/erp/12/en-us/Content/V7DEV/integration-guide_ws-overview.html
-- https://communityhub.sage.com/us/sage_x3/f/general-discussion/76797/multi-dimensional-parameters-in-subprogram-called-as-a-web-service (community)
-- https://rklesolutions.com/blog/5-days-sage-x3-web-services-v12-day-3 (community)
+- https://communityhub.sage.com/sage-global-solutions/sage_x3/f/general-discussion/76797/multi-dimensional-parameters-in-subprogram-called-as-a-web-service (community)
+- https://www.rklesolutions.com/blog/5-days-sage-x3-web-services-v12-day-3 (community)

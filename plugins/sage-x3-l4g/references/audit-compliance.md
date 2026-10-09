@@ -71,16 +71,16 @@ Local File YAUDIT [YAUD]
 Local Shortint TRANS_OPEN
 Local Integer STA
 Local Char YNUM(20)
-  ERRMSG = ""
+  [L]ERRMSG = ""
   [L]TRANS_OPEN = adxlog
   If [L]TRANS_OPEN = 0 : Trbegin [YAUD] : Endif
-  STA = func ANM_TOOL.NUMERO(GACTX, "YAU", "", date$, "", YNUM, ERRMSG)
-  If STA <> [V]CST_AOK
+  [L]STA = func ANM_TOOL.NUMERO(GACTX, "YAU", "", date$, "", [L]YNUM, [L]ERRMSG)
+  If [L]STA <> [V]CST_AOK
     If [L]TRANS_OPEN = 0 : Rollback : Endif
     End [V]CST_AERROR
   Endif
   Raz [F:YAUD]
-  [F:YAUD]AUDNUM = YNUM
+  [F:YAUD]AUDNUM = [L]YNUM
   [F:YAUD]AUDDATE = date$
   [F:YAUD]AUDDTM = datetime$
   [F:YAUD]USR = GACTX.USER
@@ -93,7 +93,7 @@ Local Char YNUM(20)
   [F:YAUD]REASON = left$([L]REASON, 250)
   Write [YAUD]
   If fstat
-    ERRMSG = "YAUDIT write failed, fstat" - num$(fstat)
+    [L]ERRMSG = "YAUDIT write failed, fstat" - num$(fstat)
     If [L]TRANS_OPEN = 0 : Rollback : Endif
     End [V]CST_AERROR
   Endif
@@ -156,25 +156,25 @@ Variable Char ERRMSG()
 Local File BPCUSTOMER [BPC], YCUSTNOTE [YCN]
 Local Shortint TRANS_OPEN
 Local Integer STA
-  ERRMSG = ""
+  [L]ERRMSG = ""
   [L]TRANS_OPEN = adxlog
   If [L]TRANS_OPEN = 0 : Trbegin [BPC], [YCN] : Endif
-  Update [YCN] Where YBPCNUM = YBPC
+  Update [YCN] Where YBPCNUM = [L]YBPC
   & With YNOTE = "", YEMAIL = "", YPHONE = ""
   If fstat
-    ERRMSG = "YCUSTNOTE update failed, fstat" - num$(fstat)
+    [L]ERRMSG = "YCUSTNOTE update failed, fstat" - num$(fstat)
     If [L]TRANS_OPEN = 0 and adxlog = 1 : Rollback : Endif : # fstat 1/3: already rolled back
     End [V]CST_AERROR
   Endif
-  Update [BPC] Where BPCNUM = YBPC With Y_GDPRSTA = 2, Y_GDPRDAT = date$
+  Update [BPC] Where BPCNUM = [L]YBPC With Y_GDPRSTA = 2, Y_GDPRDAT = date$
   If fstat or adxuprec <> 1
-    ERRMSG = "Customer" - YBPC - "not updated"
+    [L]ERRMSG = "Customer" - [L]YBPC - "not updated"
     If [L]TRANS_OPEN = 0 and adxlog = 1 : Rollback : Endif
     End [V]CST_AERROR
   Endif
   # Never log the erased values: OLDVAL stays "[redacted]"
-  STA = func YAUDLIB.YAUDIT_LOG("BPCUSTOMER", YBPC, "GDPR_PSEUDO", "", "[redacted]", "", YTICKET, ERRMSG)
-  If STA <> [V]CST_AOK
+  [L]STA = func YAUDLIB.YAUDIT_LOG("BPCUSTOMER", [L]YBPC, "GDPR_PSEUDO", "", "[redacted]", "", [L]YTICKET, [L]ERRMSG)
+  If [L]STA <> [V]CST_AOK
     If [L]TRANS_OPEN = 0 : Rollback : Endif
     End [V]CST_AERROR
   Endif
@@ -203,14 +203,14 @@ Local Integer YNB
 Local Shortint TRANS_OPEN
   [L]TRANS_OPEN = adxlog
   If [L]TRANS_OPEN <> 0 : End : Endif
-  YLIMIT = date$ - KEEPDAYS
+  [L]YLIMIT = date$ - [L]KEEPDAYS
   Trbegin [YAUD]
-  Delete [YAUD] Where AUDDATE < YLIMIT
+  Delete [YAUD] Where AUDDATE < [L]YLIMIT
   If fstat
     Rollback
     End
   Endif
-  YNB = adxdlrec
+  [L]YNB = adxdlrec
   Commit
 End
 ```
@@ -240,7 +240,7 @@ See also: `security-permissions.md`, `batch-scheduling.md`, `database.md`, `impo
 - https://online-help.sagex3.com/erp/12/en-us/Content/FCT/AHISTO.htm , …/APARHIS.htm , …/CREHISTO.htm
 - https://online-help.sagex3.com/erp/12/en-us/Content/FCT/GESAIN.htm , …/GESBPR.htm
 - https://online-help.sagex3.com/erp/12/en-us/Content/V7DEV/4gl_trbegin.html , …/4gl_delete.html , …/4gl_adxdlrec.html , …/4gl_datetime$.html
-- https://communityhub.sage.com/us/sage_x3/b/sageerp_x3_product_support_blog/posts/how-to-get-the-next-sequence-number-using-v7-style-coding (community)
+- https://communityhub.sage.com/sage-global-solutions/sage_x3/b/sageerp_x3_product_support_blog/posts/how-to-get-the-next-sequence-number-using-v7-style-coding (community)
 - https://www.greytrix.com/blogs/sagex3/2022/01/03/gdpr-in-sage-x3/ (community)
-- https://www.greytrix.com/blogs/sagex3/?p=22096 (community)
+- https://www.greytrix.com/blogs/sagex3/2021/03/13/to-export-all-the-email-address-phone-number-and-personal-details/ (community)
 - https://online-help.sagex3.com/erp/12/en-us/Content/OBJ/ADC_TRTBPA.htm

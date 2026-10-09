@@ -40,7 +40,7 @@ LogicClose File [YAC2]
   creates a temporary key usable by `Read` / `For`.
 - Plain `File` (no `Local`) closes the tables of earlier `File` statements: deprecated. Declare every
   table a routine uses with `Local File` at its start; class events get an automatic `LogicClose File`.
-- `Columns` applies to `For`, `Rewrite` and `Rewritebykey` (`Extended` adds `Read`).
+- `Columns` applies to `For`, `Rewrite` and `Rewritebykey` (`Extended` adds `Read` and `Readlock`).
 
 ## Status codes
 
@@ -57,10 +57,11 @@ LogicClose File [YAC2]
 | 6 | `[V]CST_ARECTICKUPD` | Update conflict: UPDTICK changed since the read | `Rewritebykey`, `Deletebykey` |
 | 7 | `[V]CST_ARECTICKDEL` | Row no longer exists with that UPDTICK | `Rewritebykey`, `Deletebykey` |
 
-On `Update`, fstat 1 and 3 mean the **transaction has already been rolled back**. `Update` or `Delete`
-matching **no row returns fstat 0** with `adxuprec` / `adxdlrec` = 0: test the counter whenever you
-expect a precise number of rows. Unopened table (7), unknown key (21), wrong read mode (22) or too many
-locks (43) are runtime errors, not fstat values: they stop the script unless `Onerrgo` is armed.
+On `Update`, fstat 1 and 3 mean the **transaction has already been rolled back**. `adxuprec` /
+`adxdlrec` hold the number of rows the last `Update` / `Delete` changed, and a `Delete` matching no row
+returns fstat 0 with `adxdlrec` = 0: fstat alone does not prove a row was touched, so test the counter
+whenever you expect a precise number of rows. Unopened table (7), unknown key (21), wrong read mode
+(22) or too many locks (43) are runtime errors, not fstat values: they stop the script unless `Onerrgo` is armed.
 
 ## Reading one row
 
@@ -205,7 +206,8 @@ If fstat : [L]STA = fstat : Endif      : # 1 locked, 5 missing, 3 duplicate: rol
 - In a transaction, locks last until `Commit` / `Rollback` (`Unlock` does nothing there); outside one,
   release them with `Unlock [ABV]`.
 - `Lock YSYMBOL With lockwait = 0` / `Unlock YSYMBOL` is a named mutex (fstat 1 = not obtained): lock
-  symbols outside transactions, several in one `Lock` statement.
+  symbols outside transactions, several in one `Lock` statement. Recipe (single-instance batch guard):
+  `batch-scheduling.md`.
 
 **Optimistic**: every table validated by the V7+ dictionary has an `UPDTICK` column fed by a database
 trigger (1 on insert, +1 per update). **Application code never assigns it**; read it as `[ABV]Updtick`.
@@ -230,39 +232,12 @@ If [L]TRANS_OPEN = 0 : Commit : Endif
 
 ## Complete example: YTRANSFER
 
-`YACCOUNT` is a custom table declared in GESATB with dictionary abbreviation `YAC` and primary index
-`YAC0` on `Y_ACCNUM`; the script opens it as `[YACC]`. YTRANSFER may run inside its caller's
-transaction, so it declares its table at its start (see the `Local File` gotcha below).
-
-```l4g
-Funprog YTRANSFER(FROM_ACC, TO_ACC, AMOUNT)
-Value Char    FROM_ACC(), TO_ACC()
-Value Decimal AMOUNT
-Local Shortint TRANS_OPEN
-  Local File YACCOUNT [YACC]
-  If [L]AMOUNT <= 0 or [L]FROM_ACC = [L]TO_ACC : End [V]CST_AERROR : Endif
-  [L]TRANS_OPEN = adxlog
-  If [L]TRANS_OPEN = 0 : Trbegin [YACC] : Endif
-  # Missing account and insufficient balance both give fstat 0 with adxuprec 0
-  Update [YACC] Where Y_ACCNUM = [L]FROM_ACC and Y_BALANCE >= [L]AMOUNT
-  & With Y_BALANCE -= [L]AMOUNT
-  If fstat or adxuprec <> 1
-    Gosub YTRANSFER_ABORT
-    End [V]CST_AERROR
-  Endif
-  Update [YACC] Where Y_ACCNUM = [L]TO_ACC With Y_BALANCE += [L]AMOUNT
-  If fstat or adxuprec <> 1
-    Gosub YTRANSFER_ABORT
-    End [V]CST_AERROR
-  Endif
-  If [L]TRANS_OPEN = 0 : Commit : Endif
-End [V]CST_AOK
-
-$YTRANSFER_ABORT
-  # Update fstat 1/3 already rolled back; Rollback without a transaction = error 48
-  If [L]TRANS_OPEN = 0 and adxlog = 1 : Rollback : Endif
-Return
-```
+The canonical transactional Funprog is in `SKILL.md` and, with an ALOG check, in `examples/YACCLIB.src`;
+its AXUNIT suite is `examples/QLFYAC_TRANSFER.src`. `YACCOUNT` is a custom table declared in GESATB with
+dictionary abbreviation `YAC` and primary index `YAC0` on `Y_ACCNUM`; the script opens it as `[YACC]`.
+YTRANSFER may run inside its caller's transaction, so it declares its table at its start (see the
+`Local File` gotcha below), captures `adxlog`, and tests `adxuprec` after each `Update`: a missing
+account or an insufficient balance updates no row, which fstat alone would not reveal.
 
 ## Raw SQL
 
@@ -291,6 +266,8 @@ Local Char    DBCODE(1), QRY(250)
 - After `Update` fstat 1 or 3 the transaction is already rolled back: guard `Rollback` with
   `adxlog = 1` as the idiom does, also in the caller that owns the transaction.
 - A `Filter` set by a called routine on a table it did not redeclare stays active in the caller.
+- `clalev([ABV])` (1 if the table / class is open, 0 if not) was the V6 way to avoid reopening a table;
+  Sage calls it deprecated in V7 except for a common subprogram that must reuse an already opened class.
 - 4gl_file.html: "You can open a file with Local File within a transaction, but files opened in write
   mode by Trbegin will no longer be accessible". A routine that owns the transaction declares its tables
   before `Trbegin`; a routine called inside a caller's transaction (like YTRANSFER) declares them at its
@@ -303,6 +280,7 @@ See also: `language-basics.md`, `performance.md`, `v12-classes.md`, `sequential-
 - https://online-help.sagex3.com/erp/12/en-us/Content/V7DEV/4gl_adxlog.html
 - https://online-help.sagex3.com/erp/12/en-us/Content/V7DEV/4gl_trbegin.html (inverted sample)
 - https://online-help.sagex3.com/erp/12/en-us/Content/V7DEV/4gl_update.html
+- https://online-help.sagex3.com/erp/12/en-us/Content/V7DEV/4gl_clalev.html
 - https://online-help.sagex3.com/erp/12/en-us/Content/V7DEV/developer-guide_technical-columns-of-database.html
 - https://online-help.sagex3.com/erp/12/en-us/Content/V7DEV/how-to_best-practice-for-data-transaction-handling.html
 - https://online-help.sagex3.com/erp/12/en-us/Content/FCT/GESATB.htm

@@ -53,8 +53,10 @@ Where each feature is used: `web-services-rest-client.md`, `unit-testing-axunit.
 | Classic refusal message | MODEL/VERIF_CRE documents only `OK = 0`; the hybrid guide sets `GMESSAGE`, `GOK = 0`, `GERR = 1` and says the function returning the message "will be available soon" | `GMESSAGE` + `OK = 0`, verified on screen (`classic-objects.md`) |
 | SUBITM entry points | ADC_SUBITM gives BEFWRIITF the same variables as ITMNUM ("Number": new product reference) and lists no table for CREITF; variable names are translated between language versions | Use only `[F:ITM]` and `GOK` (`entry-points.md`) |
 | Function codes without a function page | GESASW (Representations) is stated on the workbench page only; the developer guide names a context dictionary "GESACTX"; neither has an `FCT/<CODE>.htm` page | GESASW as stated by the workbench page; GESACTX not cited (`function-codes.md`) |
-| Closing the silent-import trace | GES_AOE1 sample: `Call CLOSE_LOC From LECFIC`; community code: `FERME_TRACE` | Sage's sample (`imports-exports.md`) |
-| Class script layout | Some how-to pages still show `$METHODS` + `Case ACTION` for events | Four-label layout (`v12-classes.md`) |
+| Closing the silent-import trace | GES_AOE1 sample: `Call CLOSE_LOC From LECFIC`; the AREADLOG page and community code: `FERME_TRACE` | Sage's sample after `IMPORTSIL` (`imports-exports.md`), `FERME_TRACE` elsewhere (`debugging-traces.md`) |
+| Representation script ranks | The representation events page reserves ranks that are multiples of 100 for standard extensions; the class page says 1000 | A specific rank such as 1050 (`v12-representations.md`) |
+| Parameter level at folder level | The context-parameters page defines `TYPVAL` as the folder / legislation / company / site code and lists error 4 "TYPVAL empty"; Sage's own `TYPDBA` sample passes `""` with `CST_ALEVFOLD` | Sage's sample; check the error code on your folder (`data-dictionary.md`) |
+| Class script layout | Some how-to pages show `$METHODS` + `Case ACTION` for events | Four-label layout (`v12-classes.md`) |
 
 ## Undocumented behaviour to test
 
@@ -62,6 +64,10 @@ Where each feature is used: `web-services-rest-client.md`, `unit-testing-axunit.
   back): guard every `Rollback` with `adxlog = 1` (`database.md`). `examples/YTRFPOST.src` and the
   per-row recipe of `common-patterns.md` also rely on it being 0 to tell an engine rollback from a
   business refusal — test both cases on your folder.
+- `Commit` / `Rollback` inside a `For` loop: 4gl_for only shows a transaction opened before the loop
+  and closed after `Next`, and 4gl_commit says nothing about open cursors. The per-row transactions
+  of `examples/YTRFPOST.src` and `common-patterns.md` commit inside the loop on a second abbreviation:
+  test that the cursor survives on your database before relying on it.
 - `EXEC_REST_WS`: no timeout is documented; a Sage-verified community answer states that it accepts
   and returns JSON only; header and parameter values are `Char` (255 characters).
 - `ASEND_MAIL`: no HTML option is documented, nor whether it goes through the notification server
@@ -141,9 +147,9 @@ See also: `code-review-checklist.md`, `personalisation-activity.md`, `function-c
 - https://online-help.sagex3.com/erp/12/en-us/Content/MODEL/VERIF_CRE.htm
 - https://online-help.sagex3.com/erp/12/en-us/Content/OBJ/ADC_SUBITM.htm
 - https://communityhub.sage.com/fr/sage-x3/f/technique/182920/x3v12-2021r2-appel-webservice-rest-avec-identification-oauth2-header-trop-court-via-asyrrestcli-exec_rest_ws (community)
-- https://communityhub.sage.com/us/sage_x3/f/general-discussion/212042/v12-34-native-json-parser (community)
-- https://communityhub.sage.com/us/sage_x3/f/general-discussion/200055/html-email-text-in-workflow-rules (community)
+- https://communityhub.sage.com/sage-global-solutions/sage_x3/f/general-discussion/212042/v12-34-native-json-parser (community)
+- https://communityhub.sage.com/sage-global-solutions/sage_x3/f/general-discussion/200055/html-email-text-in-workflow-rules (community)
 - https://communityhub.sage.com/sage-global-solutions/sage_x3/b/sage-x3-uk-support-insights/posts/improved-x3-session-information-in-latest-v12-patch-release (community, Sage support blog)
 - https://communityhub.sage.com/sage-global-solutions/sage_x3/b/sage-x3-support-insights-ame/posts/understanding-and-troubleshooting-the-sage-x3-batch-server (community, Sage support blog)
 - https://communityhub.sage.com/fr/sage-x3/f/technique/214506/point-d-entree-modtrtexp-et-nouvelles-releases-de-la-v12/531832 (community)
-- https://communityhub.sage.com/us/sage_x3/f/general-discussion/254832/v12p37-x3-trt-subsoha1-adx-1367-error-6-variable-non-existent-spjt (community)
+- https://communityhub.sage.com/sage-global-solutions/sage_x3/f/general-discussion/254832/v12p37-x3-trt-subsoha1-adx-1367-error-6-variable-non-existent-spjt (community)
