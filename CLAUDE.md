@@ -29,7 +29,7 @@ A Claude skill (`plugins/sage-x3-l4g/`: `SKILL.md`, `references/`, `examples/`, 
 
 - Add features, scaffolding, or "placeholder" files the user didn't ask for.
 - Create new top-level directories without asking.
-- Commit compiled artifacts (`.adx`, `.adp`), even as examples — the `.src` / `.trt` is the artifact that matters.
+- Commit compiled artifacts (`.adx`, `.adp`), even as examples — the `.src` source is the artifact that matters.
 - Commit `plugins/sage-x3-l4g/evals/results/` (eval reports).
 - Push to `origin/master` or push tags without an explicit ask (even after a successful local test).
 - Bypass the validation script — when it fails, fix the root cause, don't silence the check.
