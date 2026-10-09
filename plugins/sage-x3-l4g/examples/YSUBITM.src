@@ -1,0 +1,64 @@
+##############################################################
+# YSUBITM - entry points of the standard process SUBITM (products)
+#
+# Purpose
+#   BEFWRIITF ("before write to the ITMFACILIT table", called when a product-site
+#   is auto-generated at product creation, i.e. a single stock-managed site):
+#   write one audit row each time into the custom table YITFLOG, inside the
+#   standard transaction. If the audit row
+#   cannot be written, GOK = 0 makes the standard abandon the transaction.
+#   Every other SUBITM entry point falls through untouched.
+#
+# Context documented on the SUBITM page (ADC_SUBITM.htm) for BEFWRIITF
+#   - one transaction in progress: never Trbegin / Commit / Rollback here
+#   - no log file open
+#   - ITMMASTER [ITM] open with significant content; GOK = 0 interrupts
+#   Y_LOG_ITF opens YITFLOG with Local File inside that transaction, which
+#   4gl_file.html allows; see version-caveats.md and test it on your folder.
+#
+# Prerequisites
+#   - GESATB: table YITFLOG, abbreviation YIF, index YIF0 on YLOGID (long integer);
+#     fields YLOGID, ITMREF, YUSR, YDAT
+#   - GESAPE line: standard script SUBITM, specific script YSUBITM,
+#     activity code YITM (X/Y/Z code: protected, switchable)
+#   - GESACV: create activity code YITM; activate it in GESADS (Specific tab)
+#     and revalidate the folder (personalisation-activity.md)
+#
+# References: entry-points.md, database.md (adxlog idiom), classic-objects.md (GOK)
+##############################################################
+
+$ACTION
+  Case ACTION
+    When "BEFWRIITF" : Gosub Y_BEFWRIITF
+  Endcase
+Return
+
+$Y_BEFWRIITF
+  # Runs inside the standard program: no Local here, the work is in a Funprog
+  If func YSUBITM.Y_LOG_ITF([F:ITM]ITMREF, GUSER) <> [V]CST_AOK
+    GOK = 0
+  Endif
+Return
+
+##############################################################
+# Y_LOG_ITF - audit row; joins the standard transaction (adxlog = 1 here),
+# and still works if called from code with no transaction open
+##############################################################
+Funprog Y_LOG_ITF(ITEM, USR)
+Value Char ITEM(), USR()
+Local File YITFLOG [YIF]
+Local Shortint TRANS_OPEN
+  Raz [F:YIF]
+  [F:YIF]YLOGID = uniqid([YIF])
+  [F:YIF]ITMREF = [L]ITEM
+  [F:YIF]YUSR   = [L]USR
+  [F:YIF]YDAT   = date$
+  [L]TRANS_OPEN = adxlog
+  If [L]TRANS_OPEN = 0 : Trbegin [YIF] : Endif
+  Write [YIF]
+  If fstat
+    If [L]TRANS_OPEN = 0 and adxlog = 1 : Rollback : Endif
+    End [V]CST_AERROR
+  Endif
+  If [L]TRANS_OPEN = 0 : Commit : Endif
+End [V]CST_AOK

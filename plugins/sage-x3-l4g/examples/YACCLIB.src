@@ -1,0 +1,75 @@
+##############################################################
+# YACCLIB - account library used by the examples and references
+#
+# Purpose
+#   YTRANSFER  transactional transfer between two accounts, reusable inside or
+#              outside a caller's transaction (canonical adxlog idiom)
+#   YCHECKBAL  V7+ log (ALOG class) listing the accounts with a negative balance
+#
+# Prerequisites
+#   - GESATB: table YACCOUNT, dictionary abbreviation YAC, primary index YAC0 on
+#     Y_ACCNUM, decimal field Y_BALANCE; activity code of your delivery (X/Y/Z)
+#   - Validate the table, then compile this script in your folder
+#
+# References
+#   database.md          "Complete example: YTRANSFER" (same code, same table)
+#   debugging-traces.md  "V12 log files: the ALOG class" (YCHECKBAL)
+#   unit-testing-axunit.md and QLFYAC_TRANSFER.src test YTRANSFER
+#   common-patterns.md   composing YTRANSFER in a caller-owned transaction
+##############################################################
+
+##############################################################
+# YTRANSFER - move AMOUNT from FROM_ACC to TO_ACC
+# Returns [V]CST_AOK or [V]CST_AERROR. Opens its own transaction only
+# when none is running; otherwise the caller commits or rolls back.
+##############################################################
+Funprog YTRANSFER(FROM_ACC, TO_ACC, AMOUNT)
+Value Char    FROM_ACC(), TO_ACC()
+Value Decimal AMOUNT
+Local Shortint TRANS_OPEN
+  Local File YACCOUNT [YACC]
+  If [L]AMOUNT <= 0 or [L]FROM_ACC = [L]TO_ACC : End [V]CST_AERROR : Endif
+  [L]TRANS_OPEN = adxlog
+  If [L]TRANS_OPEN = 0 : Trbegin [YACC] : Endif
+  # Missing account and insufficient balance both give fstat 0 with adxuprec 0
+  Update [YACC] Where Y_ACCNUM = [L]FROM_ACC and Y_BALANCE >= [L]AMOUNT
+  & With Y_BALANCE -= [L]AMOUNT
+  If fstat or adxuprec <> 1
+    Gosub YTRANSFER_ABORT
+    End [V]CST_AERROR
+  Endif
+  Update [YACC] Where Y_ACCNUM = [L]TO_ACC With Y_BALANCE += [L]AMOUNT
+  If fstat or adxuprec <> 1
+    Gosub YTRANSFER_ABORT
+    End [V]CST_AERROR
+  Endif
+  If [L]TRANS_OPEN = 0 : Commit : Endif
+End [V]CST_AOK
+
+$YTRANSFER_ABORT
+  # Update fstat 1/3 already rolled back; Rollback without a transaction = error 48
+  If [L]TRANS_OPEN = 0 and adxlog = 1 : Rollback : Endif
+Return
+
+##############################################################
+# YCHECKBAL - flag negative balances in YACCOUNT, return the log name (script YACCLIB)
+##############################################################
+Subprog YCHECKBAL(LOGNAME)
+Variable Char LOGNAME()
+Local File YACCOUNT [YACC]
+Local Instance YLOG Using C_ALOG
+Local Integer OK, NBNEG
+  YLOG = NewInstance C_ALOG AllocGroup Null
+  OK = fmet YLOG.ABEGINLOG("YCHECKBAL - contrôle des soldes")
+  LOGNAME = fmet YLOG.AGETNAME
+  OK = fmet YLOG.APUTLINE("User " + GACTX.USER - "folder " + GACTX.AFOLDER, [V]CST_AINFO)
+  For [YACC] Where Y_BALANCE < 0
+    NBNEG += 1
+    OK = fmet YLOG.APUTLINE("Solde négatif : " + [F:YACC]Y_ACCNUM, [V]CST_AWARNING)
+  Next
+  If NBNEG > 0
+    OK = fmet YLOG.APUTLINE(num$(NBNEG) - "account(s) in error", [V]CST_AERROR)
+  Endif
+  OK = fmet YLOG.AENDLOG
+  FreeGroup YLOG
+End

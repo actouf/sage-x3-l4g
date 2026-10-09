@@ -1,0 +1,130 @@
+##############################################################
+# YTRFPOST - post the pending transfers of staging table YTRFSTG
+#
+# Purpose
+#   Reads the YTRFSTG rows with Y_STA = 1. Each row runs in its own short
+#   transaction: the row is claimed (Y_STA = 2), then posted with YTRANSFER in
+#   the same transaction, so posting and status commit or roll back together.
+#   A row refused by YTRANSFER is rolled back, then marked rejected (Y_STA = 3)
+#   in a second short transaction. The first infrastructure error (lock,
+#   duplicate key, unexpected row state) stops the loop with Break.
+#   Rows still at 1 are retried by the next run: the process is restart-safe.
+#   Everything is written to an ALOG log file (.tra in the folder TRA directory).
+#
+# Prerequisites
+#   - YACCLIB.src (YTRANSFER) and table YACCOUNT, see YACCLIB.src
+#   - GESATB: table YTRFSTG, abbreviation YTS, unique index YTS0 on Y_STGID:
+#       Y_STGID   long integer, filled with uniqid([YTS]) by the loader
+#       Y_FROMACC, Y_TOACC  same type as YACCOUNT.Y_ACCNUM
+#       Y_AMOUNT  decimal
+#       Y_STA     short integer: 1 pending, 2 posted, 3 rejected
+#       Y_PRCDAT  date of processing
+#   - Batch use (batch-scheduling.md): GESACT action YTRFPOST, template
+#     Standard process, Batch box checked, this script as its specific script;
+#     GESAFC function YTRFPOST on that action; GESABT task on that function;
+#     schedule it with GESABA. The template opens no transaction.
+#   - Direct use from any code that has no transaction open:
+#       Call YTRF_POST(NBOK, NBKO, LOGNAME) From YTRFPOST
+#
+# References
+#   batch-scheduling.md  Standard process actions (EXEC), restart safety
+#   database.md          adxlog idiom, Update fstat / adxuprec
+#   debugging-traces.md  ALOG methods
+#   common-patterns.md   "Per-row transactions over a staging table"
+##############################################################
+
+$ACTION
+  Case ACTION
+    When "EXEC" : Gosub YEXEC
+  Endcase
+Return
+
+$YEXEC
+  # Labels share the locals of the template: keep them free of Local declarations
+  Call YTRF_BATCH From YTRFPOST
+Return
+
+##############################################################
+# YTRF_BATCH - entry used by the batch action (no parameters)
+##############################################################
+Subprog YTRF_BATCH
+Local Integer YNBOK, YNBKO
+Local Char    YLOGNAME(250)
+  Call YTRF_POST(YNBOK, YNBKO, YLOGNAME) From YTRFPOST
+End
+
+##############################################################
+# YTRF_POST - NBOK / NBKO receive the posted / rejected counts and
+# LOGNAME the log file name. NBKO = -1: not run (caller transaction open).
+##############################################################
+Subprog YTRF_POST(NBOK, NBKO, LOGNAME)
+Variable Integer NBOK, NBKO
+Variable Char    LOGNAME()
+Local File YTRFSTG [YTS]                       : # read cursor
+Local File YTRFSTG [YTU]                       : # second abbreviation for the updates
+Local Instance YLOG Using C_ALOG
+Local Integer  STGID, STA, ST, LOGST, FATAL
+  [L]NBOK = 0
+  [L]NBKO = 0
+  If adxlog <> 0
+    # Per-row commits are impossible inside the caller's transaction
+    [L]NBKO = -1
+    End
+  Endif
+  YLOG = NewInstance C_ALOG AllocGroup Null
+  [L]LOGST = fmet YLOG.ABEGINLOG("YTRFPOST - transferts en attente")
+  LOGNAME = fmet YLOG.AGETNAME()
+  For [YTS]YTS0 Where Y_STA = 1
+    [L]STGID = [F:YTS]Y_STGID
+    Trbegin [YTU]
+    # 1. Claim the row: locks it; a row taken meanwhile gives adxuprec = 0
+    Update [YTU] Where Y_STGID = [L]STGID and Y_STA = 1
+    & With Y_STA = 2, Y_PRCDAT = date$
+    [L]ST = fstat
+    If [L]ST <> 0 or adxuprec <> 1
+      If adxlog = 1 : Rollback : Endif         : # fstat 1/3: already rolled back
+      [L]FATAL = 1
+      [L]LOGST = fmet YLOG.APUTLINE("Ligne" - num$([L]STGID) - ": réservation impossible, fstat"
+      & - num$([L]ST), [V]CST_AERROR)
+    Else
+      # 2. Post in the same transaction: YTRANSFER sees adxlog = 1 and leaves it to us
+      [L]STA = func YACCLIB.YTRANSFER([F:YTS]Y_FROMACC, [F:YTS]Y_TOACC, [F:YTS]Y_AMOUNT)
+      If [L]STA = [V]CST_AOK
+        Commit
+        [L]NBOK += 1
+      Elsif adxlog = 1
+        # Business refusal: YTRANSFER left our transaction open. Undo the claim, record the refusal
+        Rollback
+        Gosub YTRF_REJECT
+      Else
+        # Lock or duplicate inside YTRANSFER: the engine already rolled back (see version-caveats.md)
+        [L]FATAL = 1
+        [L]LOGST = fmet YLOG.APUTLINE("Ligne" - num$([L]STGID) - ": verrou ou doublon", [V]CST_AERROR)
+      Endif
+    Endif
+    Break [L]FATAL
+  Next
+  If [L]FATAL
+    [L]LOGST = fmet YLOG.APUTLINE("Traitement interrompu : relancer après correction", [V]CST_AERROR)
+  Endif
+  [L]LOGST = fmet YLOG.APUTLINE(num$([L]NBOK) - "posted," - num$([L]NBKO) - "rejected", [V]CST_AINFO)
+  [L]LOGST = fmet YLOG.AENDLOG()
+  FreeGroup YLOG
+End
+
+$YTRF_REJECT
+  Trbegin [YTU]
+  Update [YTU] Where Y_STGID = [L]STGID and Y_STA = 1
+  & With Y_STA = 3, Y_PRCDAT = date$
+  [L]ST = fstat
+  If [L]ST <> 0 or adxuprec <> 1
+    If adxlog = 1 : Rollback : Endif
+    [L]FATAL = 1
+    [L]LOGST = fmet YLOG.APUTLINE("Ligne" - num$([L]STGID) - ": rejet non enregistré, fstat"
+    & - num$([L]ST), [V]CST_AERROR)
+  Else
+    Commit
+    [L]NBKO += 1
+    [L]LOGST = fmet YLOG.APUTLINE("Ligne" - num$([L]STGID) - ": transfert refusé", [V]CST_AWARNING)
+  Endif
+Return

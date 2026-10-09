@@ -1,0 +1,65 @@
+##############################################################
+# SPEYCU - specific actions of the Classic object YCU (external customer codes)
+#
+# Purpose
+#   VERIF_CRE / VERIF_MOD (before the transaction): refuse the record with
+#   OK = 0 when the VAT number is empty or the linked X3 customer is unknown.
+#   INICRE / INIMOD (inside the transaction, just before Write / Rewrite):
+#   normalise the VAT number in [F:YCU]; GOK = 0 would abort the transaction.
+#
+# Prerequisites
+#   - GESATB: table YCUSTEXT, abbreviation YCU, index YCU0 on YCODE;
+#     fields YCODE (key), YNAME, YVATNUM, BPCNUM (optional link to BPCUSTOMER)
+#   - GESAMK: screen YCU0 holding YCODE, YNAME, YVATNUM, BPCNUM
+#   - GESAOB: object YCU on table YCUSTEXT (its specific actions are looked up
+#     in script SPE + object code = SPEYCU)
+#   - TXT: chapter 160 (specific messages), message 11 "VAT number required",
+#     message 12 "Unknown customer"
+#   - One X/Y/Z activity code on every element above (GESACV)
+#
+# Notes
+#   - The VERIF_CRE help page documents only OK = 0. GMESSAGE carries the text
+#     as in classic-objects.md (SPEBPC example); check how your patch level
+#     displays it before relying on it.
+#   - Actions are reached by Gosub: they share the locals of the object
+#     process, so the checks live in Funprogs with their own Local File.
+#
+# References: classic-objects.md, screens-and-masks.md, conventions-and-naming.md
+##############################################################
+
+$ACTION
+  Case ACTION
+    When "VERIF_CRE" : Gosub Y_VERIF
+    When "VERIF_MOD" : Gosub Y_VERIF
+    When "INICRE"    : Gosub Y_NORMALISE
+    When "INIMOD"    : Gosub Y_NORMALISE
+  Endcase
+Return
+
+$Y_VERIF
+  # No transaction yet: the entered values are in the screen class [M:YCU0]
+  If vireblc([M:YCU0]YVATNUM, 4) = ""
+    GMESSAGE = mess(11, 160, 1)
+    OK = 0
+  Elsif [M:YCU0]BPCNUM <> "" and func SPEYCU.Y_CUSTOMER_EXISTS([M:YCU0]BPCNUM) = 0
+    GMESSAGE = mess(12, 160, 1)
+    OK = 0
+  Endif
+Return
+
+$Y_NORMALISE
+  # Transaction open, [F:YCU] loaded from the screens: last changes before the write
+  [F:YCU]YVATNUM = toupper(vireblc([F:YCU]YVATNUM, 4)) : # no spaces, upper case
+Return
+
+##############################################################
+# Y_CUSTOMER_EXISTS - 1 when the X3 customer exists, else 0
+##############################################################
+Funprog Y_CUSTOMER_EXISTS(CUSTNUM)
+Value Char CUSTNUM()
+Local File BPCUSTOMER [YBPC]
+  Look [YBPC]BPC0 = [L]CUSTNUM               : # existence test, buffer untouched
+  If fstat = 0
+    End 1
+  Endif
+End 0
