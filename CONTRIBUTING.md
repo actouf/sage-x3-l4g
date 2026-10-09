@@ -1,46 +1,64 @@
 # Contributing to sage-x3-l4g
 
-Thanks for considering a contribution. This skill teaches Claude how to write and debug Sage X3 V12 L4G code — every change has to keep that mission sharp.
+Thanks for considering a contribution. This skill teaches Claude how to write and debug Sage X3 V12 L4G code — every change has to keep that mission sharp, and every fact has to be right.
 
 ## What's most useful
 
 **Great PRs:**
-- Real-world V12 patterns I haven't covered (integration recipes, class idioms, batch templates)
-- Corrections when Sage X3 behavior differs from what a reference claims (include the version / patch level where you verified)
-- New `examples/*.src` or `*.trt` that are compilable on V12 and illustrate one idea cleanly
-- Cross-references between files when a topic spans two (e.g. "see `web-services-integration.md` for …")
+- Corrections when Sage X3 behaviour differs from what a reference claims — include the source (online help page) or the version / patch level where you verified it
+- Real-world V12 patterns not covered yet (class scripts, entry points, integration recipes, AXUNIT tests)
+- New `plugins/sage-x3-l4g/examples/*.src` or `*.trt` that compile on V12 and illustrate one idea cleanly
+- New eval cases under `plugins/sage-x3-l4g/evals/` for prompts the skill handles badly
 
 **Less useful (will likely be declined):**
 - Renaming / reorganizing without a concrete problem to fix
 - V6-only tips that don't apply in V12
 - Generic 4GL tips not specific to Sage X3
-- Stylistic rewrites that don't add information
+- Content without a source ("I think `FOO` exists")
+
+## Sources are mandatory
+
+Every reference ends with a `## Sources` section. Every keyword, function, signature, function code (`GESxxx`), host script, menu path or default value must come from a page you can link:
+
+1. [Sage X3 online help](https://online-help.sagex3.com/) — `V7DEV/4gl_*` pages for the language, `FCT/<CODE>.htm` for function codes, `V7DEV/developer-guide_*` / `how-to_*` / `api-guide_*` for the frameworks.
+2. [L.V. Expertise X3](https://lvexpertisex3.com/) mirror of the same help.
+3. Community sources ([Sage Community Hub](https://communityhub.sage.com/), partner blogs) — acceptable, but mark the claim *(community-reported)* in prose.
+
+If you cannot source it, leave it out. Earlier versions of this skill shipped invented APIs (`ENVMAIL`, `ECRAN_TRACE`, `AFNC.JSONGET`, a `Class … Endclass` syntax…); `scripts/validate.sh` now rejects them.
 
 ## L4G style in examples
 
 Match the style used throughout the skill, which matches mainstream X3 codebases:
 
 - **PascalCase for keywords**: `If`, `Endif`, `For`, `Next`, `Local`, `Value`, `Return`, `End`
-- **UPPERCASE for identifiers**: variables, fields, table aliases, message codes
-- **2 spaces** for indentation — never tabs (tabs render unpredictably in the Sage editor)
-- **Class prefixes in brackets are explicit**: `[L]COUNT`, `[F:BPC]BPCNUM`, `[M:SOH]SOHNUM` — even when unambiguous
-- **`Y` or `Z` prefix on every *custom* symbol** — tables, scripts, classes, activity codes, message chapters you create. Never prefix standard Sage symbols (`BPCUSTOMER`, `GESBPC`, `NUMERO`…) — they stay as shipped.
+- **UPPERCASE for identifiers**: variables, fields, table abbreviations, message codes
+- **2 spaces** for indentation — never tabs
+- **Class prefixes in brackets are explicit**: `[L]COUNT`, `[F:BPC]BPCNAM`, `[M:BPC0]BPCNUM`
+- **`X`, `Y` or `Z` prefix on every custom symbol** — tables, scripts, classes, activity codes. Never rename standard Sage symbols.
+- **`fstat` check immediately after** every DB / file operation; **`adxuprec`** after `Update` and **`adxdlrec`** after `Delete` when a row count matters
+- **Transactions** use the idiom from `database.md`: `[L]TRANS_OPEN = adxlog`, then `Trbegin` / `Commit` / `Rollback` only when `TRANS_OPEN = 0`. No `Trbegin` in class events — the supervisor owns that transaction.
+- **Continuation lines** start with `&`; **inline comments** use `: #`
 - **French/English mixed comments** are fine and match real X3 codebases
-- **`fstat` check immediately after** every DB / file operation
-- **Transactional writes** use the `If adxlog` nested-transaction idiom (see `database.md`)
 
 ## Structure
 
 ```
 .
 ├── .claude-plugin/
-│   └── marketplace.json
+│   └── marketplace.json          # marketplace (no version here)
 ├── plugins/
 │   └── sage-x3-l4g/
-│       ├── SKILL.md              # entry point, auto-loaded
-│       └── references/*.md       # consulted on demand
-├── examples/                     # compilable fixtures
-├── tests/triggers.md             # manual trigger validation
+│       ├── .claude-plugin/
+│       │   └── plugin.json       # name + version (single source of truth)
+│       ├── SKILL.md              # entry point, loaded when the skill triggers
+│       ├── references/*.md       # consulted on demand
+│       ├── examples/             # .src / .trt fixtures shipped with the skill
+│       └── evals/                # `claude plugin eval` suite (not shipped in the zip)
+├── scripts/
+│   ├── validate.sh               # structure, sources, versions, L4G deny-list
+│   └── release-notes.sh          # extracts one CHANGELOG section
+├── .github/workflows/            # validate.yml (CI), release.yml (tag → GitHub Release)
+├── index.md, _config.yml         # GitHub Pages site
 ├── README.md / README_FR.md
 ├── CHANGELOG.md
 ├── CONTRIBUTING.md               # you are here
@@ -49,80 +67,75 @@ Match the style used throughout the skill, which matches mainstream X3 codebases
 
 ## Testing locally
 
-### Option A — Claude Code (fastest loop)
-
-From this repo's root:
+### Load your working copy in Claude Code
 
 ```bash
-claude plugin install --local .
+claude --plugin-dir ./plugins/sage-x3-l4g
 ```
 
-Then in a Claude Code session:
+The working copy takes priority over an installed copy for that session. After editing a file, run `/reload-plugins` in the session. Try a prompt such as:
 
 ```
-> Écris un Subprog YTRANSFER qui transfère un montant entre deux comptes
+> Écris un Funprog YTRANSFER qui transfère un montant entre deux comptes
 ```
 
-Claude should consult `references/database.md` and produce transactional code with `If adxlog`.
+Claude should load the skill, read `references/database.md`, and produce code with the `TRANS_OPEN = adxlog` idiom and `adxuprec` checks.
 
-### Option B — Claude Desktop
+### Run the evals
 
-Sync the repo through the Customize → Skills flow, then test the same prompts.
+The suite in `plugins/sage-x3-l4g/evals/` checks that the skill fires on Sage X3 prompts, stays silent on unrelated ones (Informix 4GL, ABAP, plain SQL…), and that key answers use real APIs. Each run is a real model call billed to your account:
 
-### Option C — upload as a .skill
+```bash
+cd plugins/sage-x3-l4g
+claude plugin eval . --runs 1 --ablation none --no-publish          # quick pass
+claude plugin eval . --tag negative --runs 3 --no-publish           # trigger precision
+```
 
-See the main README for the zip-based install flow. Slowest iteration loop; reserved for final validation.
+Results land in `evals/results/` (git-ignored). Re-run the suite after any change to the `description` in `SKILL.md`.
 
-## Validating a change before PR
-
-Run the validation script (checks JSON + ref links):
+### Validate before a PR
 
 ```bash
 ./scripts/validate.sh
+claude plugin validate . --strict
+claude plugin validate plugins/sage-x3-l4g --strict
 ```
 
-If it passes and CI passes, you're good.
+`validate.sh` checks the manifests, version sync between `plugin.json` and `CHANGELOG.md`, the SKILL.md frontmatter (description ≤ 1024 characters, portable keys), every reference (`## Contents` above 100 lines, `## Sources`, ≤ 340 lines, listed in SKILL.md / READMEs / `index.md`), cross-links, and the L4G code blocks (deny-list of invented keywords and APIs, 2-space indentation). CI runs the same checks.
 
 ### What CI does *not* check
 
-- **L4G compilation** — needs a Sage X3 supervisor. Out of scope for the public CI; verify your snippets in your own X3 sandbox before submitting.
-- **Trigger reliability** — `tests/triggers.md` is a manual catalog. Re-run it locally in a fresh Claude session after any `description` change in `SKILL.md`. There is no automated trigger test in CI (it would require an Anthropic API integration that this repo doesn't ship).
-- **Cross-version primitive availability** — `version-caveats.md` documents known drifts; CI can't catch a snippet that uses a primitive missing on patch 22 but present on patch 26. State the verified patch level in the PR.
+- **L4G compilation** — needs a Sage X3 folder. Compile new examples in your own sandbox and state the V12 patch level in the PR.
+- **Model behaviour** — the evals cost money, so CI doesn't run them; run them locally when you touch `SKILL.md` or a reference that an eval case covers.
 
 ## Writing a new reference
 
-1. Add the file under `plugins/sage-x3-l4g/references/<topic>.md`.
-2. **Keep it under ~300 lines.** If the topic is bigger, split by sub-concern rather than bloating a single file — Claude's progressive disclosure works better with focused files. The validation script doesn't enforce this hard cap, but reviewers do; aim for under 300, accept up to ~340 with a clear reason.
-3. Follow the existing structure: introductory paragraph, tables for option grids, `l4g` code blocks, and a **Gotchas** or **Common pitfalls** section at the end.
-4. Add a row to the reference table in `SKILL.md`.
-5. Add a bullet under "What's inside" in `README.md` and `README_FR.md`.
-6. Cross-link from other references where the topic overlaps. Use `*.md` filenames in backticks — the validator checks they resolve.
-7. Bump the version in `marketplace.json` (minor = new content, patch = corrections) and add a `CHANGELOG.md` entry.
+1. Add `plugins/sage-x3-l4g/references/<topic>.md`: intro paragraph, `## Contents` (if > 100 lines), sections, `## Gotchas`, a `See also:` line, `## Sources`.
+2. Keep it under ~300 lines (hard limit 340). Split by sub-concern rather than bloating a file.
+3. Add a row to the reference table in `SKILL.md`, and a bullet in `README.md`, `README_FR.md` and `index.md`.
+4. Cross-link from other references where the topic overlaps, using bare backticked filenames (`database.md`) — the validator checks they resolve.
+5. Add an entry under `## [Unreleased]` in `CHANGELOG.md`.
 
-When splitting an existing reference:
-
-- Keep the original filename as a **slim overview / router** if multiple files cross-reference it. Don't break links by deleting the old file.
-- Move detail into new `<topic>-<aspect>.md` files (e.g. `web-services-soap.md`, `web-services-rest.md`).
-- Update every cross-reference in the rest of the repo (`grep -rn 'old-filename.md' plugins/ examples/ tests/`).
-- Run `./scripts/validate.sh` — it catches missing files but not stale pointers, so the grep is on you.
+When splitting an existing reference, keep the original filename as a slim router if other files link to it, and grep for stale pointers (`grep -rn 'old-file.md' plugins/`).
 
 ## Releases and tags
 
-Releases follow SemVer: **minor** for new content, **patch** for corrections, **major** only when an existing reference changes shape in a breaking way.
+Releases follow SemVer: **minor** for new content, **patch** for corrections, **major** when an existing reference changes shape in a breaking way.
 
-When merging a release-bumping PR:
-
-1. Update `marketplace.json` `version`.
-2. Add a `CHANGELOG.md` entry with the date.
-3. After merging to `master`, tag the merge commit: `git tag vX.Y.Z <sha> && git push origin vX.Y.Z`.
-4. Optionally create a GitHub Release from the tag for marketplace visibility.
+1. In the release PR: bump `version` in `plugins/sage-x3-l4g/.claude-plugin/plugin.json`, rename `## [Unreleased]` to `## [x.y.z] — YYYY-MM-DD`, add the `[x.y.z]: https://github.com/actouf/sage-x3-l4g/releases/tag/vx.y.z` link.
+2. After merging to `master`, tag the merge commit and push the tag:
+   ```bash
+   git tag -a vX.Y.Z <merge-sha> -m "vX.Y.Z"
+   git push origin vX.Y.Z
+   ```
+3. `.github/workflows/release.yml` validates the tag against `plugin.json`, creates the GitHub Release with the CHANGELOG section as notes, and attaches `sage-x3-l4g.zip` (the folder to upload on claude.ai).
 
 ## PR process
 
-1. Fork, branch from `main` with a descriptive name (`feat/rest-streaming`, `fix/updtick-gotcha`).
+1. Fork, branch from `master` with a descriptive name (`feat/entry-points-aimp3`, `fix/rdseq-eof`).
 2. One topic per PR. Small PRs get reviewed fast.
 3. Describe the motivation — a one-line "why" beats five lines of "what changed".
-4. If you're citing Sage X3 behavior, mention the patch level you verified on.
+4. Link the sources you used and, when relevant, the V12 patch level you verified on.
 
 ## License
 

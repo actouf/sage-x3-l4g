@@ -2,6 +2,50 @@
 
 All notable changes to the `sage-x3-l4g` skill. Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning follows [SemVer](https://semver.org/).
 
+## [Unreleased]
+
+## [1.0.0] — 2026-10-09
+
+Verified rewrite. An audit against Sage's online help showed that most of the 0.x content described APIs, keywords and function codes that do not exist in X3. Every reference has been rewritten from the documentation, now cites its sources, and the validator rejects the invented identifiers. The skill is also brought in line with the Agent Skills and Claude Code plugin specifications.
+
+### Added
+- **New references**
+  - `v12-classes.md` — the real V12 class model: class dictionary (GESACLA), class scripts `_CSTD` / `_CVER` / `_CSPE`, labels `$PROPERTIES` / `$EVENTS` / `$METHODS` / `$OPERATIONS`, rules and events, instances (`NewInstance`, `fmet`, `FreeGroup`), `ASETERROR`, `ARET_VALUE`.
+  - `v12-representations.md` — representations (GESASW), facets, representation scripts and events.
+  - `classic-objects.md` — Classic object `$ACTION` scripts (`SPE` / `SPV` / `SUB` order), creation / modification / deletion actions, `OK` vs `GOK`.
+  - `entry-points.md` — entry points (GESAPE, `GPOINT`, `GPE`).
+  - `sequential-files.md` — `Openi` / `Openo` / `Openio`, `Rdseq` / `Wrseq` / `Getseq` / `Putseq`, `Iomode`.
+  - `function-codes.md` — verified GESxxx function list, and codes that do not exist.
+  - `web-services-rest-client.md` — outgoing calls with `ASYRRESTCLI.EXEC_REST_WS` / `ASYRWEBSER.EXEC_HTTP`, JSON with `ParseInstance` / `Select$`.
+  - `unit-testing-axunit.md` — AXUNIT test suites.
+- **`## Sources` section** in every reference (online-help.sagex3.com first; community-only facts marked *(community-reported)*), and **`## Contents`** in every reference over 100 lines.
+- **`plugins/sage-x3-l4g/.claude-plugin/plugin.json`** — plugin manifest, now the single source of the version.
+- **`plugins/sage-x3-l4g/evals/`** — `claude plugin eval` suite: 10 Sage X3 prompts (FR / EN) checking that the skill fires and uses real APIs, 6 negative prompts (Informix 4GL, OpenEdge ABL, ABAP, SQL, Python, Sage 50) checking that it stays silent.
+- **`.github/workflows/release.yml`** and **`scripts/release-notes.sh`** — a pushed `vX.Y.Z` tag creates the GitHub Release with this changelog section and the claude.ai upload zip, and back-fills releases for older tagged versions.
+- **Examples** shipped with the skill in `plugins/sage-x3-l4g/examples/`: `YACCLIB.src` (transactional `YTRANSFER`, ALOG check), `QLFYAC_TRANSFER.src` (AXUNIT suite), `YTRFPOST.src` (batch with per-row transactions), `SPEYCU.src` (Classic object actions), `YSUBITM.src` (entry point), `YCONTRACT_CSPE.src` (V12 class script), `YRESTRATE.src` (outgoing REST + JSON), `YIMPLAUNCH.src` (silent import).
+
+### Changed
+- **`SKILL.md`** rewritten: third-person `description` cut from 1471 to ≤ 1024 characters (Agent Skills limit, required for claude.ai upload) with correct function codes; new "When to use" and "Verification discipline" sections; corrected mental model (`fstat` + `adxuprec`, one transaction level); reference table for 35 files.
+- **All 27 existing references rewritten** from the online help. `v12-classes-representations.md` becomes a short router.
+- **Examples** moved from `examples/` to `plugins/sage-x3-l4g/examples/` so they ship with the skill; the eight 0.x examples (invented syntax) are replaced by the eight documentation-verified scripts listed above.
+- **`scripts/validate.sh`** now checks manifests, version sync (`plugin.json` = CHANGELOG = tag), frontmatter (name, ≤ 1024-character description, portable keys), SKILL.md length, `## Contents` / `## Sources` / size of every reference, listing in SKILL.md / READMEs / `index.md`, cross-links, and L4G code blocks (deny-list of invented identifiers, 2-space indentation).
+- **CI** runs `claude plugin validate --strict` on the marketplace and the plugin; `actions/checkout` pinned by SHA.
+- **`marketplace.json`** — version removed (it lives in `plugin.json`), description and keywords added.
+- **README / README_FR / `index.md`** — install instructions updated for current Claude Code, Desktop and claude.ai (zip from the latest release), dynamic release badge, new reference list.
+- **`CLAUDE.md` / `CONTRIBUTING.md`** — sources policy, corrected house style, description rule (≤ 1024 characters), local testing with `claude --plugin-dir` and evals, release process; branch name `master`.
+
+### Fixed
+- **Transaction idiom was inverted.** `If adxlog : Trbegin` opened a transaction exactly when one was already open. Now `[L]TRANS_OPEN = adxlog` and `Trbegin` / `Commit` / `Rollback` only when it is 0, with `adxuprec` checked after `Update` (a missing row is `fstat = 0`, `adxuprec = 0`).
+- **Invented V12 class syntax removed** (`Class … Endclass`, `Public`, `Private`, `Extends`, events such as `afterLoad`). Replaced by dictionary classes and class scripts.
+- **Invented APIs replaced by the documented ones:** `ENVMAIL` → `ASYRMAIL.ASEND_MAIL`; `ECRAN_TRACE` → `ALOG` class (V7+) or `OUVRE_TRACE` / `ECR_TRACE` (Classic); `LECFIC From IMPOBJ` → `IMPORTSIL From GIMPOBJ`; `IMPRIM` → report printing via AIMP3; `AFNC.JSONGET` → `ParseInstance` / `Select$`; "no HTTP client" → `ASYRRESTCLI.EXEC_REST_WS`.
+- **Non-existent keywords and functions removed:** `Readseq` / `Writeseq` / `Close n` (→ `Rdseq` / `Wrseq`), `Continue`, `Exitfor`, `Incr`, `replace$`, `len$`, `upper$`, `lower$`, `strip$`, `num$(x, fmt)` (→ `format$`), `gdat(y, m, d)` (→ `gdat$(d, m, y)`), `For … Order By`, `Exec Sql … Into` (→ `Execsql` / `For … Sql`), `Top N`.
+- **Function codes corrected** (about 20), e.g. GESAPE is Entry points (not personalisation), GESAWA is Workflow rules, GESAIM is Destinations, GESABT / GESABA are batch tasks, GESAFT is function profiles, GESACO is Headings; codes that do not exist (GESAPL, GESAUT, GESALOCK, GESAOI…) removed.
+- **Other corrections:** `fstat` tables, `mess()` third argument (message table, not language), message chapter ranges, index names (`BPC0`, not `BPCNUM0`), UPDTICK (never set by code; `Rewritebykey`), Syracuse REST URLs (`/api1/…?representation=`), Classic object actions, activity codes (5 characters), `Char` length (≤ 255, `Clbfile` beyond), the fabricated patch-drift table in `version-caveats.md`, and the claim that X3 has no unit-test framework (AXUNIT exists).
+
+### Removed
+- `tests/triggers.md` — replaced by the eval suite.
+- Root `examples/` directory — moved into the plugin.
+
 ## [0.5.1] — 2026-05-08
 
 GitHub Pages site for browsing the references without cloning.
@@ -89,6 +133,8 @@ Major content expansion: review / security / performance / batch / personalisati
 
 Major content expansion — V12 becomes the primary target.
 
+> The `v0.2.0` tag points at `2d04b5c` (initial import). Most of the changes below landed afterwards, in `698f530`…`9a1989b`; the published tag is kept as is.
+
 ### Added
 - **`references/v12-classes-representations.md`** — `Class`/`Method`/`this`, inheritance, representations, pages, business objects, `UPDTICK`, REST service surface.
 - **`references/web-services-integration.md`** — publishing SOAP (AWS) and REST endpoints, consuming external APIs, JSON helpers (`AFNC.JSONGET`), SData.
@@ -120,15 +166,19 @@ Major content expansion — V12 becomes the primary target.
 
 Initial release.
 
+> Never tagged: the first commit of this repository (`a9870d8`) already carries the 0.2.0 manifest.
+
 ### Added
 - `SKILL.md` with mental model, V6/Classic-leaning guidance, canonical transactional subprogram.
 - Six reference files covering language basics, database, masks, built-ins, conventions, and common patterns.
 - README with install instructions for Claude.ai, Desktop, and Code.
 - MIT license.
 
+[Unreleased]: https://github.com/actouf/sage-x3-l4g/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/actouf/sage-x3-l4g/releases/tag/v1.0.0
 [0.5.1]: https://github.com/actouf/sage-x3-l4g/releases/tag/v0.5.1
 [0.5.0]: https://github.com/actouf/sage-x3-l4g/releases/tag/v0.5.0
 [0.4.0]: https://github.com/actouf/sage-x3-l4g/releases/tag/v0.4.0
 [0.3.0]: https://github.com/actouf/sage-x3-l4g/releases/tag/v0.3.0
 [0.2.0]: https://github.com/actouf/sage-x3-l4g/releases/tag/v0.2.0
-[0.1.0]: https://github.com/actouf/sage-x3-l4g/releases/tag/v0.1.0
+[0.1.0]: https://github.com/actouf/sage-x3-l4g/commit/a9870d8
