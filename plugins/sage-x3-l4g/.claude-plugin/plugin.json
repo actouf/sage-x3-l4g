@@ -1,6 +1,6 @@
 {
   "name": "sage-x3-l4g",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Writes, reviews, and debugs Sage X3 V12 L4G (4GL / X3 script / Adonix) code: classes and representations, Classic objects and entry points, transactions, data dictionary and parameters, Syracuse REST and SOAP, imports, workflows, automatic journals, batch, AXUNIT tests.",
   "author": {
     "name": "actouf",

@@ -4,6 +4,8 @@ All notable changes to the `sage-x3-l4g` skill. Format based on [Keep a Changelo
 
 ## [Unreleased]
 
+## [1.1.0] — 2026-10-09
+
 Completes the skill with the data dictionary, the development loop and automatic journals; adds the self-check feedback loop recommended for Agent Skills; removes code duplicated between references and examples; measures the skill against a no-skill baseline in the evals.
 
 ### Added
@@ -23,7 +25,7 @@ Completes the skill with the data dictionary, the development loop and automatic
 
 ### Changed
 - **SKILL.md** — `description` rewritten (1022 characters) to cover the data dictionary, compiling and automatic journals; keywords that no longer fit moved to "When to use", which no longer repeats the description; every path is relative to the skill root (`references/…`, `examples/…`); reference table rows updated (profiler in `performance.md`, table abbreviations in `conventions-and-naming.md`).
-- **Evals** — graders tightened: LLM grader for the unnamed pasted code, transaction-ownership LLM grader and a wider inverted-guard regex for the transactional Funprog (renamed `fr-transactional-funprog`, new prompt that no longer matches the SKILL.md example), no `Trbegin` / wider invented-syntax check for the class rule, JSON parsing check for outgoing REST, stricter `ENVMAIL` / `Readseq` / entry-point / AXUNIT patterns. CONTRIBUTING documents the full run with the no-skill baseline (`--ablation with-without`, 3 runs, threshold 0.8).
+- **Evals** — graders tightened: LLM grader for the unnamed pasted code, transaction-ownership LLM grader and a wider inverted-guard regex for the transactional Funprog (renamed `fr-transactional-funprog`, new prompt that no longer matches the SKILL.md example), no `Trbegin` / wider invented-syntax check for the class rule, JSON parsing check for outgoing REST, stricter `ENVMAIL` / `Readseq` / entry-point / AXUNIT patterns; "must not contain" graders match code lines only, so an answer that warns against `ENVMAIL` in prose is not failed. CONTRIBUTING documents the full run with the no-skill baseline (`--ablation with-without`, 3 runs, threshold 0.8).
 - **`marketplace.json`** — the plugin entry no longer sets `description` and `keywords`, which overrode `plugin.json` for users; `plugin.json` description and keywords updated.
 - **CI** — Claude Code pinned to 2.1.295 for `claude plugin validate --strict`.
 - **`CONTRIBUTING.md` / `CLAUDE.md`** — `.src` is the documented source extension (`.trt` dropped); a new reference comes with an eval case.
@@ -213,7 +215,8 @@ Initial release.
 - README with install instructions for Claude.ai, Desktop, and Code.
 - MIT license.
 
-[Unreleased]: https://github.com/actouf/sage-x3-l4g/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/actouf/sage-x3-l4g/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/actouf/sage-x3-l4g/releases/tag/v1.1.0
 [1.0.0]: https://github.com/actouf/sage-x3-l4g/releases/tag/v1.0.0
 [0.5.1]: https://github.com/actouf/sage-x3-l4g/releases/tag/v0.5.1
 [0.5.0]: https://github.com/actouf/sage-x3-l4g/releases/tag/v0.5.0
